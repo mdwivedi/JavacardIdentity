@@ -1,0 +1,115 @@
+package {
+    // See: http://go/android-license-faq
+    // A large-scale-change added 'default_applicable_licenses' to import
+    // all of the 'license_kinds' from "hardware_interfaces_license"
+    // to get the below license kinds:
+    //   SPDX-license-identifier-Apache-2.0
+    default_applicable_licenses: ["hardware_interfaces_license"],
+}
+
+cc_library_static {
+    name: "android.hardware.identity-jc-hal-common",
+    vendor_available: true,
+    srcs: [
+        "common/IdentityCredential.cpp",
+        "common/IdentityCredentialStore.cpp",
+        "common/WritableIdentityCredential.cpp",
+    ],
+    export_include_dirs: [
+        "common",
+    ],
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Wno-deprecated-declarations",
+        "-Wno-unused-parameter",
+    ],
+    shared_libs: [
+        "liblog",
+        "libcrypto",
+        "libbinder_ndk",
+        "libkeymaster_messages",
+    ],
+    static_libs: [
+        "libbase",
+        "libcppbor",
+        "libutils",
+        "libsoft_attestation_cert",
+        "libkeymaster_portable",
+        "libsoft_attestation_cert",
+        "libpuresoftkeymasterdevice",
+        "android.hardware.identity-support-lib",
+        "android.hardware.identity-V3-ndk_platform",
+        "android.hardware.keymaster-V3-ndk_platform",
+        "android.hardware.identity-libeic-library",
+    ],
+}
+
+cc_binary {
+    name: "android.hardware.identity-service.jcic",
+    relative_install_path: "hw",
+    init_rc: ["jc-identity.rc"],
+    vintf_fragments: ["jc-identity.xml"],
+    vendor: true,
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-g",
+        "-Wno-unused-parameter",
+    ],
+    shared_libs: [
+        "liblog",
+        "libcrypto",
+        "libbinder_ndk",
+        "libkeymaster_messages",
+    ],
+    static_libs: [
+        "libbase",
+        "libcppbor",
+        "libutils",
+        "libsoft_attestation_cert",
+        "libkeymaster_portable",
+        "libsoft_attestation_cert",
+        "libpuresoftkeymasterdevice",
+        "android.hardware.identity-support-lib",
+        "android.hardware.identity-V3-ndk_platform",
+        "android.hardware.keymaster-V3-ndk_platform",
+        "android.hardware.identity-jc-hal-common",
+        "android.hardware.identity-libeic-library",
+        "libjc_transport",
+    ],
+    srcs: [
+        "service.cpp",
+        "JCSecureHardwareProxy.cpp",
+    ],
+    required: [
+        "android.hardware.jc_identity_credential.xml",
+    ],
+}
+
+cc_library {
+    name: "libjc_transport",
+    host_supported: true,
+    vendor_available: true,
+    vndk: {
+        enabled: true,
+    },
+
+    srcs: [
+        "SocketTransport.cpp",
+        "OmapiTransport.cpp",
+        "TransportUtil.cpp",
+    ],
+    shared_libs: [
+        "libbinder",
+        "libbase",
+        "liblog",
+    ],
+}
+
+prebuilt_etc {
+    name: "android.hardware.jc_identity_credential.xml",
+    sub_dir: "permissions",
+    vendor: true,
+    src: "android.hardware.jc_identity_credential.xml",
+}
