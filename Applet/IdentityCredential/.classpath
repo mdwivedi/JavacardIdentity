@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
 	<classpathentry kind="src" path="Base/src"/>
-	<classpathentry kind="con" path="com.nxp.id.jcop.eclipse.containers.cardconfig/com.nxp.id.jcop.eclipse.cardconfigs.custom;com.nxp.id.jcop.eclipse.cardapis.jc305;com.nxp.id.jcop.eclipse.cardapis.gp230;com.nxp.id.jcop.eclipse.cardapis.R1.55.1"/>
+	<classpathentry kind="src" path="JCardSimProvider/src"/>
+	<classpathentry kind="src" path="JCardSimProvider/test"/>
+	<classpathentry kind="lib" path="JCardSimProvider/lib/gpapi-upgrade.jar"/>
+	<classpathentry kind="lib" path="JCardSimProvider/lib/hamcrest-core-1.3.jar"/>
+	<classpathentry kind="lib" path="JCardSimProvider/lib/jcardsim-3.0.5-SNAPSHOT.jar"/>
+	<classpathentry kind="lib" path="JCardSimProvider/lib/junit-4.13.jar"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="lib" path="JCardSimProvider/lib/cbor-tree.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

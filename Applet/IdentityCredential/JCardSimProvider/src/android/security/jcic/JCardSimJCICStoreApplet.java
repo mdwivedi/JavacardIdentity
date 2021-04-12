@@ -9,7 +9,7 @@ public class JCardSimJCICStoreApplet extends JCICStoreApplet {
 	}
 
     public static void install(byte[] bArray, short bOffset, byte bLength) {
-        new JCardSimJCICStoreApplet().register(bArray, (short) (bOffset + 1), bArray[bOffset]);
+        new JCardSimJCICStoreApplet().register();
     }
 
 }

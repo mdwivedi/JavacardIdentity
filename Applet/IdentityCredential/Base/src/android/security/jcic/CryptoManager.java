@@ -1,5 +1,6 @@
 package android.security.jcic;
 
+import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.AESKey;
@@ -28,12 +29,12 @@ public class CryptoManager {
     public static final byte FLAG_CREDENIAL_RETRIEVAL_NAMESPACE = 9;
     private static final byte STATUS_FLAGS_SIZE = 2;
 
-    private static final short TEMP_BUFFER_SIZE = 128;
-    private static final short TEMP_BUFFER_DOCTYPE_MAXSIZE = 64;
-    private static final short TEMP_BUFFER_DOCTYPE_POS = TEMP_BUFFER_SIZE;
-    private static final short TEMP_BUFFER_IV_POS = TEMP_BUFFER_DOCTYPE_POS + TEMP_BUFFER_DOCTYPE_MAXSIZE;
-
-    public static final byte STATUS_PROFILES_TOTAL = 0;
+    public static final short TEMP_BUFFER_SIZE = 128;
+    public static final short TEMP_BUFFER_DOCTYPE_MAXSIZE = 64;
+    public static final short TEMP_BUFFER_DOCTYPE_POS = TEMP_BUFFER_SIZE;
+    public static final short TEMP_BUFFER_IV_POS = TEMP_BUFFER_DOCTYPE_POS + TEMP_BUFFER_DOCTYPE_MAXSIZE;
+    
+    /*public static final byte STATUS_PROFILES_TOTAL = 0;
     public static final byte STATUS_PROFILES_PERSONALIZED = 1;
     public static final byte STATUS_ENTRIES_IN_NAMESPACE_TOTAL = 2;
     public static final byte STATUS_ENTRIES_IN_NAMESPACE = 3;
@@ -42,7 +43,7 @@ public class CryptoManager {
     public static final byte STATUS_NAMESPACES_TOTAL = 6;
     public static final byte STATUS_DOCTYPE_LEN = 7;
     public static final byte STATUS_EPHKEY_LEN = 8;
-    private static final byte STATUS_WORDS = 9;
+    private static final byte STATUS_WORDS = 9;*/
     
     public static final byte AES_GCM_KEY_SIZE = 16; 
     public static final byte AES_GCM_IV_SIZE = 12;
@@ -62,24 +63,24 @@ public class CryptoManager {
     private final AESKey mCredentialStorageKey;
 
     // KeyPair for credential key generation 
-    private final KeyPair mCredentialECKeyPair;
+    //private final KeyPair mCredentialECKeyPair;
 
     // KeyPair for ephemeral key generation
-    private final KeyPair mTempECKeyPair;
+    //private final KeyPair mTempECKeyPair;
     
     // Signature object for creating and verifying credential signatures 
-    private final Signature mECSignature;
+    //private final Signature mECSignature;
 
-    private final Signature mHMACSignature;
+    //private final Signature mHMACSignature;
     
     // Signature object for creating and verifying credential signatures 
     private final MessageDigest mDigest;
     
     // Key for authentication signature computation
-    private final HMACKey mHMACauthKey;
+    //private final HMACKey mHMACauthKey;
     
     // Helper object to compute the HMAC key from reader ephemeral public key and signing key 
-    private final KeyAgreement mAuthentKeyGen;
+    //private final KeyAgreement mAuthentKeyGen;
     
     // Random data generator 
     private final RandomData mRandomData;
@@ -94,7 +95,7 @@ public class CryptoManager {
     private final byte[] mStatusFlags;
 
     // Temporary buffer in memory for status information
-    private final short[] mStatusWords;
+    //private final short[] mStatusWords;
 
     public CryptoManager(APDUManager apduManager, CryptoProvider cryptoProvider /*AccessControlManager accessControlManager,*/) {
     	mCryptoProvider = cryptoProvider;
@@ -103,7 +104,7 @@ public class CryptoManager {
                 JCSystem.CLEAR_ON_DESELECT);
 
         mStatusFlags = JCSystem.makeTransientByteArray((short)(STATUS_FLAGS_SIZE), JCSystem.CLEAR_ON_DESELECT);
-        mStatusWords = JCSystem.makeTransientShortArray(STATUS_WORDS, JCSystem.CLEAR_ON_DESELECT);
+        //mStatusWords = JCSystem.makeTransientShortArray(STATUS_WORDS, JCSystem.CLEAR_ON_DESELECT);
         
         // Secure Random number generation for HBK
         mRandomData = RandomData.getInstance(RandomData.ALG_TRNG);
@@ -120,30 +121,30 @@ public class CryptoManager {
         mCredentialStorageKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES_TRANSIENT_DESELECT, KeyBuilder.LENGTH_AES_128, false);
         
         // Configure key pair for elliptic curve key generation
-        mCredentialECKeyPair = new KeyPair(
-                (ECPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PUBLIC, KeyBuilder.LENGTH_EC_FP_256, false),
-                (ECPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT, KeyBuilder.LENGTH_EC_FP_256, false));
+        //mCredentialECKeyPair = new KeyPair(
+        //        (ECPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PUBLIC, KeyBuilder.LENGTH_EC_FP_256, false),
+        //        (ECPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT, KeyBuilder.LENGTH_EC_FP_256, false));
         
-        mTempECKeyPair = new KeyPair(
-                (ECPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PUBLIC, KeyBuilder.LENGTH_EC_FP_256, false),
-                (ECPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT, KeyBuilder.LENGTH_EC_FP_256, false));
+        //mTempECKeyPair = new KeyPair(
+        //        (ECPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PUBLIC, KeyBuilder.LENGTH_EC_FP_256, false),
+        //        (ECPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT, KeyBuilder.LENGTH_EC_FP_256, false));
 
         // At the moment we only support SEC-P256r1. Hence, can be configured at install time.
-        Secp256r1.configureECKeyParameters((ECKey) mCredentialECKeyPair.getPrivate());
-        Secp256r1.configureECKeyParameters((ECKey) mCredentialECKeyPair.getPublic());
-        Secp256r1.configureECKeyParameters((ECKey) mTempECKeyPair.getPrivate());
-        Secp256r1.configureECKeyParameters((ECKey) mTempECKeyPair.getPublic());
+        //Secp256r1.configureECKeyParameters((ECKey) mCredentialECKeyPair.getPrivate());
+        //Secp256r1.configureECKeyParameters((ECKey) mCredentialECKeyPair.getPublic());
+        //Secp256r1.configureECKeyParameters((ECKey) mTempECKeyPair.getPrivate());
+        //Secp256r1.configureECKeyParameters((ECKey) mTempECKeyPair.getPublic());
 
         // Initialize the object for signing data using EC
-        mECSignature = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
+        //mECSignature = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
         
         mDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
 
-        mHMACauthKey = (HMACKey) KeyBuilder.buildKey(KeyBuilder.TYPE_HMAC_TRANSIENT_DESELECT,
-                (short) (KeyBuilder.LENGTH_HMAC_SHA_256_BLOCK_64 * 8), false);
-        mHMACSignature = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
+        //mHMACauthKey = (HMACKey) KeyBuilder.buildKey(KeyBuilder.TYPE_HMAC_TRANSIENT_DESELECT,
+        //        (short) (KeyBuilder.LENGTH_HMAC_SHA_256_BLOCK_64 * 8), false);
+        //mHMACSignature = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
 
-        mAuthentKeyGen= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
+        //mAuthentKeyGen= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
         
         //mAccessControlManager = accessControlManager;
     }
@@ -163,17 +164,17 @@ public class CryptoManager {
         ICUtil.setBit(mStatusFlags, FLAG_CREDENIAL_RETRIEVAL_CHUNKED, false);
         ICUtil.setBit(mStatusFlags, FLAG_CREDENIAL_RETRIEVAL_NAMESPACE, false);
         
-        mStatusWords[STATUS_ENTRIES_IN_NAMESPACE] = 0;
+        /*mStatusWords[STATUS_ENTRIES_IN_NAMESPACE] = 0;
         mStatusWords[STATUS_ENTRIES_IN_NAMESPACE_TOTAL] = 0;
         mStatusWords[STATUS_ENTRY_AUTHDATA_LENGTH] = 0;
         mStatusWords[STATUS_DOCTYPE_LEN] = 0;
         mStatusWords[STATUS_EPHKEY_LEN] = 0;
         
-        ICUtil.shortArrayFillNonAtomic(mStatusWords, (short) 0, STATUS_WORDS, (short) 0);
+        ICUtil.shortArrayFillNonAtomic(mStatusWords, (short) 0, STATUS_WORDS, (short) 0);*/
 
         mCredentialStorageKey.clearKey();
-        mCredentialECKeyPair.getPrivate().clearKey();
-        Secp256r1.configureECKeyParameters((ECKey) mCredentialECKeyPair.getPrivate());
+        //mCredentialECKeyPair.getPrivate().clearKey();
+        //Secp256r1.configureECKeyParameters((ECKey) mCredentialECKeyPair.getPrivate());
     }
     
     /**
@@ -215,11 +216,23 @@ public class CryptoManager {
     	return mCredentialStorageKey;
     }
 
-    KeyPair getCredentialECKeyPair() {
-    	return mCredentialECKeyPair;
-    }
+    //KeyPair getCredentialECKeyPair() {
+    //	return mCredentialECKeyPair;
+    //}
     
     byte[] getTempBuffer() {
     	return mTempBuffer;
     }
+    
+
+    private void assertStatusFlagSet(byte statusFlag) {
+        if (!ICUtil.getBit(mStatusFlags, statusFlag)) {
+            ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+        }
+    }
+    
+    public void assertCredentialInitialized() {
+        assertStatusFlagSet(FLAG_CREDENIAL_KEYS_INITIALIZED);
+    }
+
 }
