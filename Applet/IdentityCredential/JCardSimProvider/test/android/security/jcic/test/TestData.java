@@ -1,7 +1,7 @@
 package android.security.jcic.test;
 
 public class TestData {
-
+	static final short MAX_APDU_BUFF_SIZE = (short)234;
 	/*private static byte []testReaderCertificate = new byte[] {
 			(byte)0x30, (byte)0x82, (byte)0x01, (byte)0x42, (byte)0x30, (byte)0x81, (byte)0xe9, (byte)0xa0, (byte)0x03, (byte)0x02,
 			(byte)0x01, (byte)0x02, (byte)0x02, (byte)0x03, (byte)0x01, (byte)0xe2, (byte)0x40, (byte)0x30, (byte)0x0a, (byte)0x06,
