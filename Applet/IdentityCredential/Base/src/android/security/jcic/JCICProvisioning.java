@@ -168,6 +168,7 @@ public class JCICProvisioning {
 	
 	private void processStartPersonalization() {
         mCryptoManager.assertCredentialInitialized();
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENIAL_PERSONALIZATION_STATE);
 
         mAPDUManager.receiveAll();
         byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
