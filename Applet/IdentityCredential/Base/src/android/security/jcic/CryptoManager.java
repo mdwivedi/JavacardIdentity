@@ -1,19 +1,13 @@
 package android.security.jcic;
 
+import com.android.javacard.keymaster.KMSEProvider;
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.AESKey;
-import javacard.security.ECKey;
-import javacard.security.ECPrivateKey;
-import javacard.security.ECPublicKey;
-import javacard.security.HMACKey;
-import javacard.security.KeyAgreement;
 import javacard.security.KeyBuilder;
-import javacard.security.KeyPair;
 import javacard.security.MessageDigest;
 import javacard.security.RandomData;
-import javacard.security.Signature;
 
 public class CryptoManager {
 
@@ -29,11 +23,6 @@ public class CryptoManager {
     public static final byte FLAG_CREDENIAL_RETRIEVAL_NAMESPACE = 9;
     private static final byte STATUS_FLAGS_SIZE = 2;
 
-    public static final short TEMP_BUFFER_SIZE = 128;
-    public static final short TEMP_BUFFER_DOCTYPE_MAXSIZE = 64;
-    public static final short TEMP_BUFFER_DOCTYPE_POS = TEMP_BUFFER_SIZE;
-    public static final short TEMP_BUFFER_IV_POS = TEMP_BUFFER_DOCTYPE_POS + TEMP_BUFFER_DOCTYPE_MAXSIZE;
-    
     /*public static final byte STATUS_PROFILES_TOTAL = 0;
     public static final byte STATUS_PROFILES_PERSONALIZED = 1;
     public static final byte STATUS_ENTRIES_IN_NAMESPACE_TOTAL = 2;
@@ -46,12 +35,19 @@ public class CryptoManager {
     private static final byte STATUS_WORDS = 9;*/
     
     public static final byte AES_GCM_KEY_SIZE = 16; 
+    public static final byte AES_GCM_TAG_SIZE = 16; 
     public static final byte AES_GCM_IV_SIZE = 12;
     public static final byte EC_KEY_SIZE = 32;
     public static final byte DIGEST_SIZE = 32;
 
+    public static final short TEMP_BUFFER_SIZE = 128;
+    public static final short TEMP_BUFFER_DOCTYPE_MAXSIZE = 64;
+    public static final short TEMP_BUFFER_DOCTYPE_POS = TEMP_BUFFER_SIZE;
+    public static final short TEMP_BUFFER_IV_POS = TEMP_BUFFER_DOCTYPE_POS + TEMP_BUFFER_DOCTYPE_MAXSIZE;
+    public static final short TEMP_BUFFER_GCM_TAG_POS = TEMP_BUFFER_IV_POS + AES_GCM_IV_SIZE;
+    
     // Actual Crypto implementation
-    private final CryptoProvider mCryptoProvider;
+    private final KMSEProvider mCryptoProvider;
     
     // Hardware bound key, initialized during Applet installation
     private final AESKey mHBK;
@@ -67,6 +63,8 @@ public class CryptoManager {
 
     // KeyPair for ephemeral key generation
     //private final KeyPair mTempECKeyPair;
+    
+    //private final Cipher mCipher;
     
     // Signature object for creating and verifying credential signatures 
     //private final Signature mECSignature;
@@ -97,10 +95,10 @@ public class CryptoManager {
     // Temporary buffer in memory for status information
     //private final short[] mStatusWords;
 
-    public CryptoManager(APDUManager apduManager, CryptoProvider cryptoProvider /*AccessControlManager accessControlManager,*/) {
+    public CryptoManager(APDUManager apduManager, KMSEProvider cryptoProvider /*AccessControlManager accessControlManager,*/) {
     	mCryptoProvider = cryptoProvider;
     	
-        mTempBuffer = JCSystem.makeTransientByteArray((short) (TEMP_BUFFER_SIZE + TEMP_BUFFER_DOCTYPE_MAXSIZE + AES_GCM_IV_SIZE),
+        mTempBuffer = JCSystem.makeTransientByteArray((short) (TEMP_BUFFER_SIZE + TEMP_BUFFER_DOCTYPE_MAXSIZE + AES_GCM_IV_SIZE + AES_GCM_TAG_SIZE),
                 JCSystem.CLEAR_ON_DESELECT);
 
         mStatusFlags = JCSystem.makeTransientByteArray((short)(STATUS_FLAGS_SIZE), JCSystem.CLEAR_ON_DESELECT);
@@ -119,6 +117,8 @@ public class CryptoManager {
 
         // Create the storage key instance 
         mCredentialStorageKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES_TRANSIENT_DESELECT, KeyBuilder.LENGTH_AES_128, false);
+        
+        //mCipher = AEADCipher.getInstance(AEADCipher.ALG_AES_GCM, AEADCipher.PAD_PKCS1, false);
         
         // Configure key pair for elliptic curve key generation
         //mCredentialECKeyPair = new KeyPair(
@@ -216,6 +216,14 @@ public class CryptoManager {
     	return mCredentialStorageKey;
     }
 
+    /**
+     * Initialize the credential cipher
+     * @param mode encrypt or decrypt
+     */
+    void initCredentialCipher(byte mode) {
+    	//mCryptoProvider.init(mCipher, mCredentialStorageKey, mode);
+    }
+    
     //KeyPair getCredentialECKeyPair() {
     //	return mCredentialECKeyPair;
     //}
@@ -235,4 +243,35 @@ public class CryptoManager {
         assertStatusFlagSet(FLAG_CREDENIAL_KEYS_INITIALIZED);
     }
 
+    public void assertInPersonalizationState() {
+        assertStatusFlagSet(FLAG_CREDENIAL_PERSONALIZATION_STATE);
+    }
+
+    public void assertStatusFlagNotSet(byte statusFlag) {
+        if (ICUtil.getBit(mStatusFlags, statusFlag)) {
+            ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+        }
+    }
+    
+//byte[] nonce = new byte[] {(byte)0x81, (byte)0x68, (byte)0x46, (byte)0xFA, (byte)0xD9, (byte)0x4A, (byte)0x2B, (byte)0xB6, (byte)0xD7, (byte)0xBC, (byte)0x8E, (byte)0x32};
+//byte[] nonce = new byte[] {(byte)0x1F, (byte)0x2B, (byte)0x28, (byte)0x45, (byte)0x1B, (byte)0x5D, (byte)0x0A, (byte)0x9F, (byte)0xCE, (byte)0x88, (byte)0x4B, (byte)0xB1};
+//byte[] storeageKey = new byte[] {(byte)0xA7, (byte)0x2F, (byte)0x2A, (byte)0x19, (byte)0x3A, (byte)0x4A, (byte)0x98, (byte)0x22, (byte)0x67, (byte)0xA3, (byte)0x2E, (byte)0x9B, (byte)0x84, (byte)0xE6, (byte)0xE6, (byte)0x50};
+    public short aesGCMEncrypt(byte[] data, short dataOffset, short dataLen,
+    		byte[] outData, short outDataOffset,
+    		byte[] authData, short authDataOffset, short authDataLen,
+    		byte[] outNonceAndTag, short outNonceAndTagOff) {
+
+        // Generate the IV
+        mRandomData.nextBytes(outNonceAndTag, outNonceAndTagOff, AES_GCM_IV_SIZE);
+        Util.arrayCopyNonAtomic(outNonceAndTag, (short) 0, outNonceAndTag, (short) outNonceAndTagOff, AES_GCM_IV_SIZE);
+    	mCredentialStorageKey.getKey(mTempBuffer, (short)0);
+    	return mCryptoProvider.aesGCMEncrypt(mTempBuffer, (short)0, (short)(mCredentialStorageKey.getSize() / 8),
+    			data, dataOffset, dataLen,
+    			outData, outDataOffset,
+    			outNonceAndTag, (short)outNonceAndTagOff, AES_GCM_IV_SIZE,
+    			//nonce, (short) 0, AES_GCM_IV_SIZE,
+    			authData, authDataOffset, authDataLen,
+    			outNonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
+    	
+    }
 }

@@ -285,11 +285,12 @@ public class APDUManager {
      */
     public short setOutgoing(boolean largeBuffer) {
         APDU apdu = APDU.getCurrentAPDU();
-        mStatusValues[VALUE_OUTGOING_EXPECTED_LENGTH] = apdu.setOutgoing();
+        short outLen = apdu.setOutgoing();
+        mStatusValues[VALUE_OUTGOING_EXPECTED_LENGTH] = largeBuffer ? MAXCHUNKSIZE : outLen;
         
         // When none is given, use APDU block size
         if(mStatusValues[VALUE_OUTGOING_EXPECTED_LENGTH] == 0) {
-            mStatusValues[VALUE_OUTGOING_EXPECTED_LENGTH] = APDU.getOutBlockSize();
+            mStatusValues[VALUE_OUTGOING_EXPECTED_LENGTH] = largeBuffer ? MAXCHUNKSIZE : APDU.getOutBlockSize();
         }
         
         ICUtil.setBit(mStatusFlags, FLAG_APDU_OUTGOING, true);
@@ -320,7 +321,7 @@ public class APDUManager {
                 
                 mStatusValues[VALUE_OUTGOING_DATA_SENT] = outLength;
             } 
-            apdu.setOutgoingLength(outLength);                
+            apdu.setOutgoingLength(outLength);
             
             apdu.sendBytesLong(getSendBuffer(), (short) 0, outLength);
             

@@ -19,6 +19,7 @@ package android.security.jcic;
 
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
+import javacard.framework.JCSystem;
 import javacard.framework.Util;
 
 public class CBOREncoder extends CBORBase{
@@ -47,8 +48,7 @@ public class CBOREncoder extends CBORBase{
     
     /**
      * Encodes the start of a byte string with the given length at the current
-     * buffer location. The actual byte string is not copied into the buffer and the
-     * internal offset will already be increased by the given length (offset will be
+     * buffer location. The actual byte string is not copied into the buffer (offset will be
      * set to the location after the byte string)
      * 
      * @return The offset in the buffer where the byte string is supposed to be
@@ -56,14 +56,42 @@ public class CBOREncoder extends CBORBase{
      */
     public short startByteString(short length) {
         encodeValue((byte) (TYPE_BYTE_STRING << 5), length);
-        return getCurrentOffsetAndIncrease(length);
+        return getCurrentOffset();
     }
 
+    /**
+     * Encodes the start of a byte string with the given length at the current
+     * buffer location. The actual byte string is not copied into the buffer (offset will be
+     * set to the location after the byte string)
+     * 
+     * @return The offset in the buffer where the byte string is supposed to be
+     *         copied into.
+     */
+    public short startByteString(byte lengthSize, byte[] lenthBuff, short lenthBuffOff) {
+    	byte encodeLengthByte = ENCODED_ONE_BYTE;
+    	switch(lengthSize) {
+	    	case 1:
+	    		encodeLengthByte = ENCODED_ONE_BYTE;
+	    		break;
+	    	case 2:
+	    		encodeLengthByte = ENCODED_TWO_BYTES;
+	    		break;
+	    	case 4:
+	    		encodeLengthByte = ENCODED_FOUR_BYTES;
+	    		break;
+	    	case 8:
+	    		encodeLengthByte = ENCODED_EIGHT_BYTES;
+	    		break;
+    		default:
+    			ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+    	}
+        writeRawByte((byte) ((TYPE_BYTE_STRING << 5) | encodeLengthByte));            
+        return (short) (writeRawByteArray(lenthBuff, lenthBuffOff, (short) lengthSize) + 1); 
+    }
 
     /**
      * Encodes the start of a text string with the given length at the current
-     * location. The actual text string is not copied into the buffer and the
-     * internal offset will already be increased by the given length (offset will be
+     * location. The actual text string is not copied into the buffer (offset will be
      * set to the location after the byte string)
      * 
      * @return The offset in the buffer where the text string is supposed to be
@@ -71,7 +99,7 @@ public class CBOREncoder extends CBORBase{
      */
     public short startTextString(short length) {
         encodeValue((byte) (TYPE_TEXT_STRING << 5), length);
-        return getCurrentOffsetAndIncrease(length);
+        return getCurrentOffset();
     }
     
     /**

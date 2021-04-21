@@ -1,11 +1,11 @@
 package android.security.jcic;
 
-import android.security.jcic.JCICStoreApplet;
+import com.android.javacard.keymaster.KMJCardSimulator;
 
 public class JCardSimJCICStoreApplet extends JCICStoreApplet {
 	
 	private JCardSimJCICStoreApplet() {
-		super(new JCardSimCryptoProvider());
+		super(new KMJCardSimulator());
 	}
 
     public static void install(byte[] bArray, short bOffset, byte bLength) {

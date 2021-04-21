@@ -21,12 +21,12 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 
     private final APDUManager mAPDUManager;
 
-    public JCICStoreApplet(CryptoProvider cryptoProvider) {
+    public JCICStoreApplet(com.android.javacard.keymaster.KMSEProvider cryptoProvider) {
         mCBORDecoder = new CBORDecoder();
         
         mCBOREncoder = new CBOREncoder();
 
-        mAPDUManager = new APDUManager((byte) (CryptoManager.AES_GCM_IV_SIZE + cryptoProvider.getGcmTagLen()));
+        mAPDUManager = new APDUManager((byte) (CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE));
 
         CryptoManager cryptoManager = new CryptoManager(mAPDUManager, cryptoProvider/*, mAccessControlManager,*/);
     	
@@ -68,27 +68,27 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
             }
         } else {
             switch (buf[ISO7816.OFFSET_INS]) {
-            case ISO7816.INS_ICS_GET_VERSION:
-                processGetVersion();
-                break;
-            case ISO7816.INS_ICS_PING:
-                processPing();
-                break;
-            case ISO7816.INS_ICS_CREATE_CREDENTIAL:
-            case ISO7816.INS_ICS_GET_ATTESTATION_CERT:
-            case ISO7816.INS_ICS_START_PERSONALIZATION:
-            case ISO7816.INS_ICS_ADD_ACCESS_CONTROL_PROFILE:
-            case ISO7816.INS_ICS_BEGIN_ADD_ENTRY:
-            case ISO7816.INS_ICS_BEGIN_ADD_ENTRY_VALUE:
-            case ISO7816.INS_ICS_FINISH_ADDING_ENTRIES:
-            case ISO7816.INS_ICS_FINISH_GET_CREDENTIAL_DATA:
-            	mProvisioning.processAPDU();
-            	break;
-            case ISO7816.INS_ICS_TEST_CBOR:
-                //processTestCBOR();
-                break;
-            default:
-                ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
+	            case ISO7816.INS_ICS_GET_VERSION:
+	                processGetVersion();
+	                break;
+	            case ISO7816.INS_ICS_PING:
+	                processPing();
+	                break;
+	            case ISO7816.INS_ICS_CREATE_CREDENTIAL:
+	            case ISO7816.INS_ICS_GET_ATTESTATION_CERT:
+	            case ISO7816.INS_ICS_START_PERSONALIZATION:
+	            case ISO7816.INS_ICS_ADD_ACCESS_CONTROL_PROFILE:
+	            case ISO7816.INS_ICS_BEGIN_ADD_ENTRY:
+	            case ISO7816.INS_ICS_BEGIN_ADD_ENTRY_VALUE:
+	            case ISO7816.INS_ICS_FINISH_ADDING_ENTRIES:
+	            case ISO7816.INS_ICS_FINISH_GET_CREDENTIAL_DATA:
+	            	mProvisioning.processAPDU();
+	            	break;
+	            case ISO7816.INS_ICS_TEST_CBOR:
+	                //processTestCBOR();
+	                break;
+	            default:
+	                ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
             }
         } 
 
