@@ -134,7 +134,8 @@ public class JCICProvisioning {
 	        case ISO7816.INS_ICS_BEGIN_ADD_ENTRY:
 	        	processBeginAddEntry();
 	            break;
-	        case ISO7816.INS_ICS_BEGIN_ADD_ENTRY_VALUE:
+	        case ISO7816.INS_ICS_ADD_ENTRY_VALUE:
+	        	processAddEntryValue();
 	            break;
 	        case ISO7816.INS_ICS_FINISH_ADDING_ENTRIES:
 	            break;
@@ -152,14 +153,14 @@ public class JCICProvisioning {
         // Check if it is a test credential
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) == 0x1) { // Test credential
         	mCryptoManager.setStatusFlag(CryptoManager.FLAG_TEST_CREDENTIAL, true);
-        	Util.arrayFillNonAtomic(tempBuffer, (short) 0, (short)(CryptoManager.getAESKeySize() / 8), (byte)0x00);
-	        mCryptoManager.getCredentialStorageKey().setKey(tempBuffer, (short) 0);
+        	Util.arrayFillNonAtomic(tempBuffer, (short) 0, CryptoManager.AES_GCM_KEY_SIZE, (byte)0x00);
+	        mCryptoManager.setCredentialStorageKey(tempBuffer, (short) 0);
         } else if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
         } else {        
 	        // Generate the AES-128 storage key 
 	        mCryptoManager.generateRandomData(tempBuffer, (short) 0, CryptoManager.AES_GCM_KEY_SIZE);
-	        mCryptoManager.getCredentialStorageKey().setKey(tempBuffer, (short) 0);
+	        mCryptoManager.setCredentialStorageKey(tempBuffer, (short) 0);
         }
 
         // Credential keys are loaded
@@ -456,6 +457,8 @@ public class JCICProvisioning {
         short nameLen = mCBORDecoder.readByteString(mCryptoManager.getTempBuffer(), (short) 0);
         mCBOREncoder.encodeTextString(mCryptoManager.getTempBuffer(), (short) 0, nameLen);
         
+        mCBORDecoder.skipEntry();//AccessControlProfileIds
+        
         if(mCBORDecoder.getIntegerSize() == (short)1) {
         	mStatusWords[STATUS_CURRENT_ENTRY_SIZE] = mCBORDecoder.readInt8();
         } else if(mCBORDecoder.getIntegerSize() == (short)2) {
@@ -491,8 +494,6 @@ public class JCICProvisioning {
         short nameLen = mCBORDecoder.readByteString(mCryptoManager.getTempBuffer(), (short) 0);
         mCBOREncoder.encodeTextString(mCryptoManager.getTempBuffer(), (short) 0, nameLen);
         
-        mCBORDecoder.skipEntry();
-        
         //encode key as AccessControlProfileIds string
         mCBOREncoder.encodeTextString(STR_ACCESS_CONTROL_PROFILE_IDS, (short)0, (short)STR_ACCESS_CONTROL_PROFILE_IDS.length);
         short acpIdLen = mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
@@ -512,5 +513,49 @@ public class JCICProvisioning {
         mAdditionalDataDigester.doFinal(outBuff, outOffset, mCBOREncoder.getCurrentOffset(), shaOut, shaOutOff);
         
         return mCBOREncoder.getCurrentOffset();
+	}
+
+	private void processAddEntryValue() {
+        mCryptoManager.assertInPersonalizationState();
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENIAL_PERSONALIZING_PROFILES);
+
+        mAPDUManager.receiveAll();
+        byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
+        short le = mAPDUManager.setOutgoing(true);
+        byte[] outBuffer = mAPDUManager.getSendBuffer();
+
+        if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != (short)0) {
+            ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+        }
+        mCBORDecoder.init(receiveBuffer, mAPDUManager.getOffsetIncomingData(), mAPDUManager.getReceivingLength());
+        mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+        short additionalDataLen = constAndCalcCBOREntryAdditionalData(receiveBuffer, mCBORDecoder.getCurrentOffset(), mAPDUManager.getReceivingLength(),
+        		outBuffer, (short)0, le, mCryptoManager.getTempBuffer(), (short) 0);
+
+        if(Util.arrayCompare(mCryptoManager.getTempBuffer(), (short) 0, mAdditionalDataSha256, (short) 0, CryptoManager.DIGEST_SIZE) != (byte)0) {
+        	ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+        }
+        
+        //We need to reset encoder and decoder
+        mCBORDecoder.init(receiveBuffer, mAPDUManager.getOffsetIncomingData(), mAPDUManager.getReceivingLength());
+        mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+        mCBORDecoder.skipEntry(); //Skip additionalData
+
+        short contentLen = mCBORDecoder.readByteString(mCryptoManager.getTempBuffer(), (short) 0);
+        mDigest.update(mCryptoManager.getTempBuffer(), (short) 0, contentLen);
+        
+        if((contentLen * 2) > CryptoManager.TEMP_BUFFER_SIZE) {
+        	ISOException.throwIt(ISO7816.SW_INSUFFICIENT_MEMORY);
+        }
+        mCryptoManager.aesGCMEncrypt(mCryptoManager.getTempBuffer(), (short)0, contentLen,
+        		mCryptoManager.getTempBuffer(), contentLen,
+        		outBuffer, (short)0, additionalDataLen,
+        		mCryptoManager.getTempBuffer(), CryptoManager.TEMP_BUFFER_IV_POS);
+        
+        //Output will be nonce|encryptedData|tag
+        Util.arrayCopyNonAtomic(mCryptoManager.getTempBuffer(), CryptoManager.TEMP_BUFFER_IV_POS, outBuffer, (short) 0, CryptoManager.AES_GCM_IV_SIZE);
+        Util.arrayCopyNonAtomic(mCryptoManager.getTempBuffer(), contentLen, outBuffer, CryptoManager.AES_GCM_IV_SIZE, contentLen);
+        Util.arrayCopyNonAtomic(mCryptoManager.getTempBuffer(), CryptoManager.TEMP_BUFFER_GCM_TAG_POS, outBuffer, (short) (CryptoManager.AES_GCM_IV_SIZE + contentLen), CryptoManager.AES_GCM_TAG_SIZE);
+        mAPDUManager.setOutgoingLength((short) (CryptoManager.AES_GCM_IV_SIZE + contentLen + CryptoManager.AES_GCM_TAG_SIZE));
 	}
 }

@@ -33,7 +33,7 @@ public interface ISO7816 extends javacard.framework.ISO7816 {
     public static final byte INS_ICS_START_PERSONALIZATION = (byte) 0x12;
     public static final byte INS_ICS_ADD_ACCESS_CONTROL_PROFILE = (byte) 0x13;
     public static final byte INS_ICS_BEGIN_ADD_ENTRY = (byte) 0x14;
-    public static final byte INS_ICS_BEGIN_ADD_ENTRY_VALUE = (byte) 0x15;
+    public static final byte INS_ICS_ADD_ENTRY_VALUE = (byte) 0x15;
     public static final byte INS_ICS_FINISH_ADDING_ENTRIES = (byte) 0x16;
     public static final byte INS_ICS_FINISH_GET_CREDENTIAL_DATA = (byte) 0x17;
      

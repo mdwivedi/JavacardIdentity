@@ -79,7 +79,7 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 	            case ISO7816.INS_ICS_START_PERSONALIZATION:
 	            case ISO7816.INS_ICS_ADD_ACCESS_CONTROL_PROFILE:
 	            case ISO7816.INS_ICS_BEGIN_ADD_ENTRY:
-	            case ISO7816.INS_ICS_BEGIN_ADD_ENTRY_VALUE:
+	            case ISO7816.INS_ICS_ADD_ENTRY_VALUE:
 	            case ISO7816.INS_ICS_FINISH_ADDING_ENTRIES:
 	            case ISO7816.INS_ICS_FINISH_GET_CREDENTIAL_DATA:
 	            	mProvisioning.processAPDU();
