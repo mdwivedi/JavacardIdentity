@@ -50,10 +50,6 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 		
     }
 
-    public static void install(byte[] bArray, short bOffset, byte bLength) {
-        new JCICStoreApplet(new DummyCryptoProvider()).register(bArray, (short) (bOffset + 1), bArray[bOffset]);
-    }
-
 	public void process(APDU apdu) throws ISOException {
         byte[] buf = apdu.getBuffer();
 

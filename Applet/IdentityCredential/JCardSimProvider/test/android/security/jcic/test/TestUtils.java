@@ -144,6 +144,21 @@ public class TestUtils {
 	    return (0x9000 == response.getSW());
 	}
 
+	public static boolean finishGetCredentialData(CardSimulator simulator, String docType) {
+		CborArray cborArray = CborArray.create();
+		cborArray.add(CborTextString.create(docType));
+	    byte[] inBuff = cborArray.toCborByteArray();
+	    
+	    CommandAPDU apdu = TestUtils.encodeApdu(false, ISO7816.INS_ICS_FINISH_GET_CREDENTIAL_DATA, (byte) 0x00, (byte) 0x00, inBuff, (short) 0, (short) inBuff.length);
+	    ResponseAPDU response = simulator.transmitCommand(apdu);
+	    System.out.println("finishGetCredentialData Response : ");
+	    for(int i = 0; i < response.getBytes().length; i++) {
+	    	System.out.print(String.format("%02X", response.getBytes()[i]));
+	    }
+	    System.out.println();
+	    return (0x9000 == response.getSW());
+	}
+
 	public static CommandAPDU encodeApdu(boolean isChaining, byte ins, byte p1, byte p2, byte[] inBuff, short offset, short length) {
 		short apduLength = 0;
 		byte[] buf = new byte[2500];

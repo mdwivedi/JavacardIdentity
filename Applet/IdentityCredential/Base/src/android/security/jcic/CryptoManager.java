@@ -210,13 +210,22 @@ public class CryptoManager {
 	        generateRandomData(mCredentialStorageKey, (short) 0, CryptoManager.AES_GCM_KEY_SIZE);
         }
     }
+    
+    void getCreadentialStorageKey(byte[] storageKey, short skStart) {
+    	Util.arrayCopyNonAtomic(mCredentialStorageKey, (short) 0, storageKey, skStart, AES_GCM_KEY_SIZE);
+    }
 
     void createEcKeyPairAndAttestation(boolean isTestCredential) {
     	mCryptoProvider.createAsymmetricKey(KMType.EC, mCredentialKeyPair, (short)0, EC_KEY_SIZE, mCredentialKeyPair, EC_KEY_SIZE, (short)(EC_KEY_SIZE * 3), mCredentialKeyPairLengths);
 
         // Only include TAG_IDENTITY_CREDENTIAL_KEY if it's not a test credential
         if (!isTestCredential) {
+        	//TODO 
         }
+    }
+    
+    void getCredentialEcKey(byte[] credentialEcKey, short start) {
+    	Util.arrayCopyNonAtomic(mCredentialKeyPair, (short) 0, credentialEcKey, start, EC_KEY_SIZE);
     }
     
     short signPreSharedHash(byte[] sha256Hash, short hashOffset, byte[] signBuff, short signBuffOffset) {

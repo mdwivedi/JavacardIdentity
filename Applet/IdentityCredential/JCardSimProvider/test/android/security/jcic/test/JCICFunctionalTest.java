@@ -1,7 +1,5 @@
 package android.security.jcic.test;
 
-import java.util.Iterator;
-
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 
@@ -10,9 +8,6 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.google.iot.cbor.CborArray;
-import com.google.iot.cbor.CborObject;
-import com.google.iot.cbor.CborParseException;
 import com.google.iot.cbor.CborTextString;
 import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
@@ -23,8 +18,7 @@ import javacard.framework.AID;
 
 public class JCICFunctionalTest {
 	private CardSimulator simulator;
-	
-	
+
 	public JCICFunctionalTest() {
 		simulator =  new CardSimulator();
 	}
@@ -128,6 +122,8 @@ public class JCICFunctionalTest {
 	    Assert.assertTrue(TestUtils.addEntry(simulator, entryData));
 	    
 	    Assert.assertTrue(TestUtils.finishAddingEntries(simulator));
+	    
+	    Assert.assertTrue(TestUtils.finishGetCredentialData(simulator, "org.iso.18013-5.2019.mdl"));
 	}
 
 }
