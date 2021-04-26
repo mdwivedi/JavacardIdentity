@@ -1,5 +1,7 @@
 package android.security.jcic.test;
 
+import java.util.Iterator;
+
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 
@@ -8,6 +10,8 @@ import org.junit.Assert;
 import com.google.iot.cbor.CborArray;
 import com.google.iot.cbor.CborByteString;
 import com.google.iot.cbor.CborInteger;
+import com.google.iot.cbor.CborObject;
+import com.google.iot.cbor.CborParseException;
 import com.google.iot.cbor.CborSimple;
 import com.google.iot.cbor.CborTextString;
 import com.licel.jcardsim.smartcardio.CardSimulator;
@@ -17,16 +21,36 @@ import javacard.framework.Util;
 
 public class TestUtils {
 
+	public static HardwareInfo getHardwareInfo(CardSimulator simulator) {
+		HardwareInfo hardwareInfo = null;
+		
+		CommandAPDU apdu = new CommandAPDU(new byte[] {(byte) 0x80, ISO7816.INS_ICS_GET_HARDWARE_INFO, (byte) 0x00, (byte) 0x00, (byte) 0x00});
+	    ResponseAPDU response = simulator.transmitCommand(apdu);
+	    Assert.assertEquals(0x9000, response.getSW());
+	    try {
+	    	CborArray hardwareInfoArray = (CborArray)CborArray.createFromCborByteArray(response.getData(), (short)0, response.getData().length);
+	    	hardwareInfo = new HardwareInfo();
+	    	Iterator<CborObject> itr = hardwareInfoArray.iterator();
+	    	
+	    	hardwareInfo.credentialStoreName = itr.next().toJavaObject().toString();
+	    	hardwareInfo.credentialStoreAuthorName = itr.next().toJavaObject().toString();
+	    	hardwareInfo.dataChunkSize = (Integer)itr.next().toJavaObject();
+	    	hardwareInfo.isDirectAccess = (Boolean)itr.next().toJavaObject();
+	    	Object obj = itr.next().toJavaObject();
+	    	if(obj != null && obj instanceof String[]) {
+	    		hardwareInfo.supportedDocTypes = (String[])obj;
+	    	}
+	    } catch (CborParseException e) {
+	    	Assert.fail();
+	    }
+	    return hardwareInfo;
+	}
+	
 	public static boolean setupWritableCredential(CardSimulator simulator, boolean testCredential) {
 		byte p2 = testCredential ? (byte)0x01 : (byte)0x00;
 		CommandAPDU apdu = new CommandAPDU(new byte[] {(byte) 0x80, ISO7816.INS_ICS_CREATE_CREDENTIAL, (byte) 0x00, p2, (byte) 0x00});
 	    ResponseAPDU response = simulator.transmitCommand(apdu);
-	    if(0x9000 == response.getSW()) {
-	    	return true;
-	    } else {
-	    	return false;
-	    }
-
+	    return (0x9000 == response.getSW());
 	}
 
 	public static boolean startPersonalization(CardSimulator simulator, PersonalizationData personalizationData) {
@@ -39,12 +63,7 @@ public class TestUtils {
 	    
 	    CommandAPDU apdu = TestUtils.encodeApdu(false, ISO7816.INS_ICS_START_PERSONALIZATION, (byte) 0x00, (byte) 0x00, inBuff, (short) 0, (short) inBuff.length);
 	    ResponseAPDU response = simulator.transmitCommand(apdu);
-	    if(0x9000 == response.getSW()) {
-	    	return true;
-	    } else {
-	    	return false;
-	    }
-
+	    return (0x9000 == response.getSW());
 	}
 
 	public static boolean addAccessControlProfile(CardSimulator simulator, TestProfile profileData) {
@@ -72,21 +91,16 @@ public class TestUtils {
 	    	System.out.print(String.format("%02X", response.getBytes()[i]));
 	    }
 	    System.out.println();
-	    if(0x9000 == response.getSW()) {
-	    	return true;
-	    } else {
-	    	return false;
-	    }
-
+	    return (0x9000 == response.getSW());
 	}
 
 	public static boolean addEntry(CardSimulator simulator, TestEntryData entryData) {
-		CborArray additionDataCbor = CborArray.create();
-		additionDataCbor.add(CborTextString.create(entryData.nameSpace));
-		additionDataCbor.add(CborTextString.create(entryData.name));
-		additionDataCbor.add(CborArray.createFromJavaObject(entryData.profileIds));
-		additionDataCbor.add(CborInteger.create(65535));
-	    byte[] inBuff = additionDataCbor.toCborByteArray();
+		CborArray additionalDataCbor = CborArray.create();
+		additionalDataCbor.add(CborTextString.create(entryData.nameSpace));
+		additionalDataCbor.add(CborTextString.create(entryData.name));
+		additionalDataCbor.add(CborArray.createFromJavaObject(entryData.profileIds));
+		additionalDataCbor.add(CborInteger.create(entryData.valueCbor.length));
+	    byte[] inBuff = additionalDataCbor.toCborByteArray();
 
 	    CommandAPDU apdu = TestUtils.encodeApdu(false, ISO7816.INS_ICS_BEGIN_ADD_ENTRY, (byte) 0x00, (byte) 0x00, inBuff, (short) 0, (short) inBuff.length);
 	    ResponseAPDU response = simulator.transmitCommand(apdu);
@@ -99,12 +113,13 @@ public class TestUtils {
 	    	return false;
 	    }
 
-		additionDataCbor = CborArray.create();
-		additionDataCbor.add(CborTextString.create(entryData.nameSpace));
-		additionDataCbor.add(CborTextString.create(entryData.name));
-		additionDataCbor.add(CborArray.createFromJavaObject(entryData.profileIds));
+		additionalDataCbor = CborArray.create();
+		additionalDataCbor.add(CborTextString.create(entryData.nameSpace));
+		additionalDataCbor.add(CborTextString.create(entryData.name));
+		additionalDataCbor.add(CborArray.createFromJavaObject(entryData.profileIds));
+		additionalDataCbor.add(CborInteger.create(entryData.valueCbor.length));
 		CborArray cborArray = CborArray.create();
-		cborArray.add(additionDataCbor);
+		cborArray.add(additionalDataCbor);
 		cborArray.add(CborByteString.create(entryData.valueCbor));
 	    inBuff = cborArray.toCborByteArray();
 
@@ -115,11 +130,18 @@ public class TestUtils {
 	    	System.out.print(String.format("%02X", response.getBytes()[i]));
 	    }
 	    System.out.println();
-	    if(0x9000 == response.getSW()) {
-	    	return true;
-	    } else {
-	    	return false;
+	    return (0x9000 == response.getSW());
+	}
+
+	public static boolean finishAddingEntries(CardSimulator simulator) {
+		CommandAPDU apdu = new CommandAPDU(new byte[] {(byte) 0x80, ISO7816.INS_ICS_FINISH_ADDING_ENTRIES, (byte) 0x00, 0x00, (byte) 0x00});
+	    ResponseAPDU response = simulator.transmitCommand(apdu);
+	    System.out.println("finishAddingEntries Response : ");
+	    for(int i = 0; i < response.getBytes().length; i++) {
+	    	System.out.print(String.format("%02X", response.getBytes()[i]));
 	    }
+	    System.out.println();
+	    return (0x9000 == response.getSW());
 	}
 
 	public static CommandAPDU encodeApdu(boolean isChaining, byte ins, byte p1, byte p2, byte[] inBuff, short offset, short length) {

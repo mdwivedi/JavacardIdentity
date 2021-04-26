@@ -10,7 +10,21 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 
     // Version identifier of this Applet
     public static final byte[] VERSION = { (byte) 0x00, (byte) 0x02, (byte) 0x00 };
+    //Identity Credential Reference Implementation
+    private static final byte[] STR_CREDENTIAL_SOTRE_NAME = {(byte) 0x49, (byte) 0x64, (byte) 0x65, (byte) 0x6e, (byte) 0x74, (byte) 0x69, (byte) 0x74, (byte) 0x79,
+    														(byte) 0x20, (byte) 0x43, (byte) 0x72, (byte) 0x65, (byte) 0x64, (byte) 0x65, (byte) 0x6e, (byte) 0x74,
+    														(byte) 0x69, (byte) 0x61, (byte) 0x6c, (byte) 0x20, (byte) 0x4a, (byte) 0x61, (byte) 0x76, (byte) 0x61,
+    														(byte) 0x43, (byte) 0x61, (byte) 0x72, (byte) 0x64, (byte) 0x20, (byte) 0x49, (byte) 0x6d, (byte) 0x70,
+    														(byte) 0x6c, (byte) 0x65, (byte) 0x6d, (byte) 0x65, (byte) 0x6e, (byte) 0x74, (byte) 0x61, (byte) 0x74,
+    														(byte) 0x69, (byte) 0x6f, (byte) 0x6e};
 
+    //Google
+    private static final byte[] STR_CREDENTIAL_SOTRE_AUTHIR_NAME = {(byte) 0x47, (byte) 0x6f, (byte) 0x6f, (byte) 0x67, (byte) 0x6c, (byte) 0x65};
+    
+    public static final short DATA_CHUNK_SIZE = (short)1024;
+    
+    public static final boolean IS_DIRECT_ACCESS_ENABLED = false;
+    
     private final CBORDecoder mCBORDecoder;
 
     private final CBOREncoder mCBOREncoder;
@@ -73,6 +87,9 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 	                break;
 	            case ISO7816.INS_ICS_PING:
 	                processPing();
+	                break;
+	            case ISO7816.INS_ICS_GET_HARDWARE_INFO:
+	                processGetHardwareInfo();
 	                break;
 	            case ISO7816.INS_ICS_CREATE_CREDENTIAL:
 	            case ISO7816.INS_ICS_GET_ATTESTATION_CERT:
@@ -152,6 +169,30 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
         short outLength = Util.arrayCopyNonAtomic(VERSION, (short) 0, outBuffer, (short) 0, (short) VERSION.length);
 
         mAPDUManager.setOutgoingLength(outLength);
+    }
+
+    /**
+     * Process the GET HardwareInfo command
+     */
+    private void processGetHardwareInfo() {
+        final byte[] inBuffer = mAPDUManager.getReceiveBuffer();
+
+        if (Util.getShort(inBuffer, ISO7816.OFFSET_P1) != 0x0) {
+            ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+        }
+
+        short le = mAPDUManager.setOutgoing();
+        final byte[] outBuffer = mAPDUManager.getSendBuffer();
+
+        mCBOREncoder.init(outBuffer, (short)0, le);
+        mCBOREncoder.startArray((short)5);
+        mCBOREncoder.encodeTextString(STR_CREDENTIAL_SOTRE_NAME, (short) 0, (short)STR_CREDENTIAL_SOTRE_NAME.length);
+        mCBOREncoder.encodeTextString(STR_CREDENTIAL_SOTRE_AUTHIR_NAME, (short) 0, (short)STR_CREDENTIAL_SOTRE_AUTHIR_NAME.length);
+        mCBOREncoder.encodeUInt16(DATA_CHUNK_SIZE);
+        mCBOREncoder.encodeBoolean(IS_DIRECT_ACCESS_ENABLED);
+        mCBOREncoder.startArray((short) 0);
+        
+        mAPDUManager.setOutgoingLength(mCBOREncoder.getCurrentOffset());
     }
     
 }

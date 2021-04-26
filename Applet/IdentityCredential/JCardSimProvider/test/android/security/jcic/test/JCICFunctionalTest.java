@@ -1,5 +1,7 @@
 package android.security.jcic.test;
 
+import java.util.Iterator;
+
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 
@@ -8,6 +10,9 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.google.iot.cbor.CborArray;
+import com.google.iot.cbor.CborObject;
+import com.google.iot.cbor.CborParseException;
 import com.google.iot.cbor.CborTextString;
 import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
@@ -38,6 +43,18 @@ public class JCICFunctionalTest {
 		AID appletAID = AIDUtil.create("A00000006203020C010101");
 		// Delete i.e. uninstall applet
 		simulator.deleteApplet(appletAID);
+	}
+
+	@Test
+	public void testGetHardwareInfo() {
+		HardwareInfo hardwareInfo = TestUtils.getHardwareInfo(simulator);
+		Assert.assertNotNull(hardwareInfo);
+		System.out.println("HardwareInfo:");
+		System.out.println("credentialStoreName : " + hardwareInfo.credentialStoreName);
+		System.out.println("credentialStoreAuthorName : " + hardwareInfo.credentialStoreAuthorName);
+		System.out.println("dataChunkSize : " + hardwareInfo.dataChunkSize);
+		System.out.println("isDirectAccess : " + hardwareInfo.isDirectAccess);
+		System.out.println("supportedDocTypes : " + hardwareInfo.supportedDocTypes);
 	}
 
 	@Test
@@ -109,6 +126,8 @@ public class JCICFunctionalTest {
 
 	    TestEntryData entryData = new TestEntryData("Name Space", "Last name", CborTextString.create("Turing").toCborByteArray(), new int[] {1});
 	    Assert.assertTrue(TestUtils.addEntry(simulator, entryData));
+	    
+	    Assert.assertTrue(TestUtils.finishAddingEntries(simulator));
 	}
 
 }

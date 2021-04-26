@@ -1,11 +1,16 @@
 package android.security.jcic;
 
+import com.android.javacard.keymaster.KMOperation;
 import com.android.javacard.keymaster.KMSEProvider;
+import com.android.javacard.keymaster.KMType;
+
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
 import javacard.security.AESKey;
+import javacard.security.CryptoException;
 import javacard.security.KeyBuilder;
+import javacard.security.KeyPair;
 import javacard.security.MessageDigest;
 import javacard.security.RandomData;
 
@@ -54,6 +59,11 @@ public class CryptoManager {
     
     // Storage key for a credential
     private final byte[] mCredentialStorageKey;
+
+    // KeyPair for credential key
+    private final byte[] mCredentialKeyPair;
+    // Temporary buffer in memory for keyLengths
+    private final short[] mCredentialKeyPairLengths;
 
     // KeyPair for credential key generation 
     //private final KeyPair mCredentialECKeyPair;
@@ -114,6 +124,8 @@ public class CryptoManager {
 
         // Create the storage key byte array 
         mCredentialStorageKey = JCSystem.makeTransientByteArray(AES_GCM_KEY_SIZE, JCSystem.CLEAR_ON_RESET);
+        mCredentialKeyPair = JCSystem.makeTransientByteArray((short)(EC_KEY_SIZE * 4), JCSystem.CLEAR_ON_RESET);
+        mCredentialKeyPairLengths = JCSystem.makeTransientShortArray((short)2, JCSystem.CLEAR_ON_RESET);
         
         //mCipher = AEADCipher.getInstance(AEADCipher.ALG_AES_GCM, AEADCipher.PAD_PKCS1, false);
         
@@ -189,8 +201,37 @@ public class CryptoManager {
     	return mHBK;
     }
 
-    void setCredentialStorageKey(byte[] keyBuff, short offset) {
-    	Util.arrayCopyNonAtomic(keyBuff, offset, mCredentialStorageKey, (short)0, AES_GCM_KEY_SIZE);
+    void createCredentialStorageKey(boolean testCredential) {
+        // Check if it is a test credential
+        if(testCredential) { // Test credential
+        	Util.arrayFillNonAtomic(mCredentialStorageKey, (short) 0, CryptoManager.AES_GCM_KEY_SIZE, (byte)0x00);
+        } else {
+	        // Generate the AES-128 storage key 
+	        generateRandomData(mCredentialStorageKey, (short) 0, CryptoManager.AES_GCM_KEY_SIZE);
+        }
+    }
+
+    void createEcKeyPairAndAttestation(boolean isTestCredential) {
+    	mCryptoProvider.createAsymmetricKey(KMType.EC, mCredentialKeyPair, (short)0, EC_KEY_SIZE, mCredentialKeyPair, EC_KEY_SIZE, (short)(EC_KEY_SIZE * 3), mCredentialKeyPairLengths);
+
+        // Only include TAG_IDENTITY_CREDENTIAL_KEY if it's not a test credential
+        if (!isTestCredential) {
+        }
+    }
+    
+    short signPreSharedHash(byte[] sha256Hash, short hashOffset, byte[] signBuff, short signBuffOffset) {
+    	/* Test data */
+    	byte[] privKey = new byte[] {(byte) 0x03, (byte) 0x64, (byte) 0x3d, (byte) 0x30, (byte) 0x2e, (byte) 0xad, (byte) 0xbe, (byte) 0x58, (byte) 0x21, (byte) 0xb7, (byte) 0xad, (byte) 0xa2, (byte) 0x21, (byte) 0x45, (byte) 0xfb, (byte) 0x8b, (byte) 0x35, (byte) 0x0a, (byte) 0x6e, (byte) 0x1c, (byte) 0x2a, (byte) 0x42, (byte) 0x50, (byte) 0x11, (byte) 0x46, (byte) 0x2d, (byte) 0xea, (byte) 0x38, (byte) 0x28, (byte) 0x4c, (byte) 0xfe, (byte) 0x7b};
+    	sha256Hash = new byte[] {(byte) 0x55, (byte) 0xa1, (byte) 0x22, (byte) 0x0f, (byte) 0x97, (byte) 0x4d, (byte) 0x86, (byte) 0xe6, (byte) 0xff, (byte) 0x0c, (byte) 0x5f, (byte) 0x19, (byte) 0x79, (byte) 0xe7, (byte) 0x7d, (byte) 0xef, (byte) 0x71, (byte) 0xdf, (byte) 0xbd, (byte) 0x92, (byte) 0xa7, (byte) 0x21, (byte) 0xe3, (byte) 0x0d, (byte) 0x8f, (byte) 0x34, (byte) 0x8e, (byte) 0xfd, (byte) 0xa6, (byte) 0xf4, (byte) 0x0f, (byte) 0xe2};
+    	hashOffset = (short) 0;
+    	Util.arrayCopyNonAtomic(privKey, (short) 0, mCredentialKeyPair, (short) 0, EC_KEY_SIZE);
+    	/* Test data finish */
+    	
+    	KMOperation signer = mCryptoProvider.initAsymmetricOperation(KMType.SIGN, KMType.EC,  KMType.PADDING_NONE , KMType.DIGEST_NONE,
+    																mCredentialKeyPair, (short)0, mCredentialKeyPairLengths[0], //Private key
+    																mCredentialKeyPair, EC_KEY_SIZE, mCredentialKeyPairLengths[1]); //Public key
+    	
+    	return signer.sign(sha256Hash, hashOffset, DIGEST_SIZE, signBuff, signBuffOffset);
     }
     
     void setStatusFlag(byte flag, boolean isSet) {

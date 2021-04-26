@@ -17,6 +17,8 @@
 
 package android.security.jcic;
 
+import javacard.framework.Util;
+
 public class ICUtil {
 
     /**
@@ -122,5 +124,31 @@ public class ICUtil {
             buffer[offset] = value;
         }
         return offset;
+    }
+    
+    /**
+     * Increment a 4 byte integer by given short value
+     * @param integer byte array of integer value
+     * @param iStart start offset of integer byte array
+     * @param shortArr byte array of short value
+     * @param sStart start offset if short byte array
+     */
+    public static void incrementInteger32(byte[] integer, short iStart, byte[] shortArr, short sStart) {
+		byte index = 3;
+		short sum;
+		byte carry = (byte)0;
+		while(index > (byte)0) {
+			if(index >= (byte)2) {
+		    	short a1 = (short)(integer[iStart + index] & 0x00FF);
+		    	short a2 = (short)(shortArr[sStart + index - (short)2] & 0x00FF);
+				sum = (short)(carry + a1 + a2);
+			} else {
+		    	short a1 = (short)(integer[iStart + index] & 0x00FF);
+				sum = (short)(carry + a1);
+			}
+			integer[index] = (byte)sum;
+			carry = (byte) (sum > 255 ? 1 : 0);
+			index--;
+		}
     }
 }
