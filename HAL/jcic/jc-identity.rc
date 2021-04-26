@@ -1,0 +1,3 @@
+service vendor.identity-jcic /vendor/bin/hw/android.hardware.identity-service.jcic
+    class hal
+    user nobody
