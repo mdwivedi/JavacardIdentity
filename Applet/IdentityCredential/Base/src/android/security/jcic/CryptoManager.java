@@ -1,16 +1,9 @@
 package android.security.jcic;
 
-import com.android.javacard.keymaster.KMOperation;
-import com.android.javacard.keymaster.KMSEProvider;
-import com.android.javacard.keymaster.KMType;
-
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
-import javacard.security.AESKey;
-import javacard.security.CryptoException;
 import javacard.security.KeyBuilder;
-import javacard.security.KeyPair;
 import javacard.security.MessageDigest;
 import javacard.security.RandomData;
 
@@ -52,7 +45,7 @@ public class CryptoManager {
     public static final short TEMP_BUFFER_GCM_TAG_POS = TEMP_BUFFER_IV_POS + AES_GCM_IV_SIZE;
     
     // Actual Crypto implementation
-    private final KMSEProvider mCryptoProvider;
+    private final ICryptoProvider mCryptoProvider;
     
     // Hardware bound key, initialized during Applet installation
     private final byte[] mHBK;
@@ -102,7 +95,7 @@ public class CryptoManager {
     // Temporary buffer in memory for status information
     //private final short[] mStatusWords;
 
-    public CryptoManager(APDUManager apduManager, KMSEProvider cryptoProvider /*AccessControlManager accessControlManager,*/) {
+    public CryptoManager(APDUManager apduManager, ICryptoProvider cryptoProvider /*AccessControlManager accessControlManager,*/) {
     	mCryptoProvider = cryptoProvider;
     	
         mTempBuffer = JCSystem.makeTransientByteArray((short) (TEMP_BUFFER_SIZE + TEMP_BUFFER_DOCTYPE_MAXSIZE + AES_GCM_IV_SIZE + AES_GCM_TAG_SIZE),
@@ -209,7 +202,7 @@ public class CryptoManager {
     }
 
     void createEcKeyPairAndAttestation(boolean isTestCredential) {
-    	mCryptoProvider.createAsymmetricKey(KMType.EC, mCredentialKeyPair, (short)0, EC_KEY_SIZE, mCredentialKeyPair, EC_KEY_SIZE, (short)(EC_KEY_SIZE * 3), mCredentialKeyPairLengths);
+    	mCryptoProvider.createECKey(mCredentialKeyPair, (short)0, EC_KEY_SIZE, mCredentialKeyPair, EC_KEY_SIZE, (short)(EC_KEY_SIZE * 3), mCredentialKeyPairLengths);
 
         // Only include TAG_IDENTITY_CREDENTIAL_KEY if it's not a test credential
         if (!isTestCredential) {
@@ -229,7 +222,7 @@ public class CryptoManager {
     	Util.arrayCopyNonAtomic(privKey, (short) 0, mCredentialKeyPair, (short) 0, EC_KEY_SIZE);
     	/* Test data finish */
     	
-    	KMOperation signer = mCryptoProvider.initAsymmetricOperation(KMType.SIGN, KMType.EC,  KMType.PADDING_NONE , KMType.DIGEST_NONE,
+    	ICryptoOperation signer = mCryptoProvider.initECSignWithNoDigestOperation(
     																mCredentialKeyPair, (short)0, mCredentialKeyPairLengths[0], //Private key
     																mCredentialKeyPair, EC_KEY_SIZE, mCredentialKeyPairLengths[1]); //Public key
     	
@@ -300,18 +293,30 @@ public class CryptoManager {
 		*/
     }
     
-    short entryptCredentialData(byte[] data, short dataOffset, short dataLen,
+    short entryptCredentialData(boolean isTestCredential,
+    		byte[] data, short dataOffset, short dataLen,
     		byte[] outData, short outDataOffset,
     		byte[] authData, short authDataOffset, short authDataLen,
     		byte[] outNonceAndTag, short outNonceAndTagOff) {
 
         // Generate the IV
         mRandomData.nextBytes(outNonceAndTag, outNonceAndTagOff, AES_GCM_IV_SIZE);
-    	return mCryptoProvider.aesGCMEncrypt(mHBK, (short)0, (short)mHBK.length,
-    			data, dataOffset, dataLen,
-    			outData, outDataOffset,
-    			outNonceAndTag, (short)outNonceAndTagOff, AES_GCM_IV_SIZE,
-    			authData, authDataOffset, authDataLen,
-    			outNonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
+        if(isTestCredential) {
+        	//In case of testCredential HBK should be initialized with 0's
+        	//If testCredential is true mCredentialStorageKey is already initialized with 0's so no need to create separate HBK for testCredential.
+        	return mCryptoProvider.aesGCMEncrypt(mCredentialStorageKey, (short)0, (short)mCredentialStorageKey.length,
+	    			data, dataOffset, dataLen,
+	    			outData, outDataOffset,
+	    			outNonceAndTag, (short)outNonceAndTagOff, AES_GCM_IV_SIZE,
+	    			authData, authDataOffset, authDataLen,
+	    			outNonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
+        } else {
+	    	return mCryptoProvider.aesGCMEncrypt(mHBK, (short)0, (short)mHBK.length,
+	    			data, dataOffset, dataLen,
+	    			outData, outDataOffset,
+	    			outNonceAndTag, (short)outNonceAndTagOff, AES_GCM_IV_SIZE,
+	    			authData, authDataOffset, authDataLen,
+	    			outNonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
+        }
     }
 }

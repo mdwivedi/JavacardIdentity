@@ -606,10 +606,11 @@ public class JCICProvisioning {
         	ISOException.throwIt(ISO7816.SW_INSUFFICIENT_MEMORY);
         }
         //Encrypt content and additional data as aad
-        mCryptoManager.aesGCMEncrypt(tempBuffer, (short)0, contentLen,
-        		tempBuffer, contentLen,
-        		outBuffer, (short)0, additionalDataLen,
-        		tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS);
+        mCryptoManager.aesGCMEncrypt(
+        		tempBuffer, (short)0, contentLen, //in data
+        		tempBuffer, contentLen, //Out encrypted data
+        		outBuffer, (short)0, additionalDataLen, //Auth data
+        		tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS); //nonce and tag
         
         //Output will be nonce|encryptedData|tag
         Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, outBuffer, (short) 0, CryptoManager.AES_GCM_IV_SIZE);
@@ -706,7 +707,11 @@ public class JCICProvisioning {
 		mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
 		short docTypeLen = mCBORDecoder.readByteString(tempBuffer, (short)0);
 		short dataSize = mCBOREncoder.getCurrentOffset();
-		mCryptoManager.entryptCredentialData(outBuffer, (short) 0, mCBOREncoder.getCurrentOffset(), tempBuffer, (short) 0, tempBuffer, (short) 0, docTypeLen, tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS);
+		mCryptoManager.entryptCredentialData(mCryptoManager.getStatusFlag(CryptoManager.FLAG_TEST_CREDENTIAL),
+				outBuffer, (short) 0, mCBOREncoder.getCurrentOffset(), //in data
+				tempBuffer, (short) 0, //out encrypted data
+				tempBuffer, (short) 0, docTypeLen, //Auth data
+				tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS); //Nonce and tag
 
         //Output will be nonce|encryptedData|tag
         Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, outBuffer, (short) 0, CryptoManager.AES_GCM_IV_SIZE);

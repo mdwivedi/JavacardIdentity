@@ -17,8 +17,6 @@
 
 package android.security.jcic;
 
-import javacard.framework.Util;
-
 public class ICUtil {
 
     /**

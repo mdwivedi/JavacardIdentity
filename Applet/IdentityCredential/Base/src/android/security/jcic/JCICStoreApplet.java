@@ -35,7 +35,7 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 
     private final APDUManager mAPDUManager;
 
-    public JCICStoreApplet(com.android.javacard.keymaster.KMSEProvider cryptoProvider) {
+    public JCICStoreApplet(ICryptoProvider cryptoProvider) {
         mCBORDecoder = new CBORDecoder();
         
         mCBOREncoder = new CBOREncoder();

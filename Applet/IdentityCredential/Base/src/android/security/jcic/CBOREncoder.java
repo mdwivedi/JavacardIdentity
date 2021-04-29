@@ -19,7 +19,6 @@ package android.security.jcic;
 
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
-import javacard.framework.JCSystem;
 import javacard.framework.Util;
 
 public class CBOREncoder extends CBORBase{
