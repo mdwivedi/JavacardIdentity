@@ -17,10 +17,7 @@ public class JCICProvisioning {
     public static final byte STATUS_NUM_ENTRY_COUNTS = 0;
     public static final byte STATUS_CURRENT_NAMESPACE = 1;
     public static final byte STATUS_CURRENT_NAMESPACE_NUM_PROCESSED = 2;
-    public static final byte STATUS_CURRENT_ENTRY_SIZE = 3;
-    public static final byte STATUS_CURRENT_ENTRY_NUM_BYTES_RECEIVED = 4;
-    public static final byte STATUS_EXPECTED_CBOR_SIZE_AT_END = 5;
-    private static final byte STATUS_WORDS = 6;
+    private static final byte STATUS_WORDS = 3;
     
     //Signature1
     private static final byte[] STR_SIGNATURE1 = new byte[] {(byte)0x53, (byte)0x69, (byte)0x67, (byte)0x6E, (byte)0x61,
@@ -96,9 +93,15 @@ public class JCICProvisioning {
     private final MessageDigest mAdditionalDataDigester;
     
     private final short[] mEntryCounts;
-    
-    private final byte[] mExpectedCborSizeAtEnd;
-    private final byte[] mCurrentCborSize;
+
+    public static final byte BYTE_SIZE = 1;
+    public static final byte SHORT_SIZE = 2;
+    public static final byte INT_SIZE = 4;
+    public static final byte LONG_INT_SIZE = 8;
+    private final byte[] mIntExpectedCborSizeAtEnd;
+    private final byte[] mIntCurrentCborSize;
+    private final byte[] mIntCurrentEntrySize;
+    private final byte[] mIntCurrentEntryNumBytesReceived;
 
     private final byte[] mAdditionalDataSha256;
 
@@ -119,15 +122,19 @@ public class JCICProvisioning {
         mSecondaryDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
         mAdditionalDataDigester = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
         
-        mExpectedCborSizeAtEnd = JCSystem.makeTransientByteArray((short) 4, JCSystem.CLEAR_ON_RESET);
-        mCurrentCborSize = JCSystem.makeTransientByteArray((short) 6, JCSystem.CLEAR_ON_RESET);
+        mIntExpectedCborSizeAtEnd = JCSystem.makeTransientByteArray((short) INT_SIZE, JCSystem.CLEAR_ON_RESET);
+        mIntCurrentCborSize = JCSystem.makeTransientByteArray((short) (INT_SIZE + SHORT_SIZE), JCSystem.CLEAR_ON_RESET);
+        mIntCurrentEntrySize = JCSystem.makeTransientByteArray((short) INT_SIZE, JCSystem.CLEAR_ON_RESET);
+        mIntCurrentEntryNumBytesReceived = JCSystem.makeTransientByteArray((short) (INT_SIZE + SHORT_SIZE), JCSystem.CLEAR_ON_RESET);
 	}
 
 	public void reset() {
 		mCryptoManager.reset();
 		mAPDUManager.reset();
-	    Util.arrayFillNonAtomic(mExpectedCborSizeAtEnd, (short)0, (short)4, (byte)0);
-	    Util.arrayFillNonAtomic(mCurrentCborSize, (short)0, (short)6, (byte)0);
+	    Util.arrayFillNonAtomic(mIntExpectedCborSizeAtEnd, (short)0, (short)INT_SIZE, (byte)0);
+	    Util.arrayFillNonAtomic(mIntCurrentCborSize, (short)0, (short)(INT_SIZE + SHORT_SIZE), (byte)0);
+	    Util.arrayFillNonAtomic(mIntCurrentEntrySize, (short)0, (short)INT_SIZE, (byte)0);
+	    Util.arrayFillNonAtomic(mIntCurrentEntryNumBytesReceived, (short)0, (short)(INT_SIZE + SHORT_SIZE), (byte)0);
 	    
 	    mDigest.reset();
 	    mSecondaryDigest.reset();
@@ -139,9 +146,9 @@ public class JCICProvisioning {
 	
 	private void updatePrimaryDigest(byte[] data, short dataStart, short dataLen) {
 		mDigest.update(data, dataStart, dataLen);
-		
-		Util.setShort(mCurrentCborSize, (short)4, dataLen);
-		ICUtil.incrementInteger32(mCurrentCborSize, (short)0, mCurrentCborSize, (short)4);
+
+		Util.setShort(mIntCurrentCborSize, (short)INT_SIZE, dataLen);
+		ICUtil.incrementInteger32(mIntCurrentCborSize, (short)0, mIntCurrentCborSize, (short)INT_SIZE);
 	}
 	private void updatePrimaryAndSecondaryDigest(byte[] data, short dataStart, short dataLen) {
 		updatePrimaryDigest(data, dataStart, dataLen);
@@ -234,11 +241,11 @@ public class JCICProvisioning {
         for(short i = 0; i < numEntryCounts; i++) {
         	short entryCount = 0;
         	byte intSize = mCBORDecoder.getIntegerSize();
-	        if(intSize  == 1) {
+	        if(intSize  == BYTE_SIZE) {
 	        	//One byte integer = max 255
 	        	entryCount = mCBORDecoder.readInt8();
 	        	mEntryCounts[i] = entryCount;
-	        } else if(intSize == 2) {
+	        } else {
 	        	//Entry count should not exceed 255
 	        	ISOException.throwIt(ISO7816.SW_DATA_INVALID);
 	        }
@@ -275,23 +282,23 @@ public class JCICProvisioning {
         // size of said bstr, ahead of time.
         // Encode byteString of received length (expectedProofOfProvisioningSize) without actual byteString
     	byte intSize = mCBORDecoder.getIntegerSize();
-    	if(intSize == 1) {
+    	if(intSize == BYTE_SIZE) {
     		byte expectedLen = mCBORDecoder.readInt8();
     		mCBOREncoder.startByteString(expectedLen);
-    		mExpectedCborSizeAtEnd[3] = expectedLen;
-    	} else if (intSize == 2) {
+    		mIntExpectedCborSizeAtEnd[3] = expectedLen;
+    	} else if (intSize == SHORT_SIZE) {
     		short expectedLen = mCBORDecoder.readInt16();
     		mCBOREncoder.startByteString(expectedLen);
-    		Util.setShort(mExpectedCborSizeAtEnd, (short)2, expectedLen);
-    	} else if(intSize == 4) {
+    		Util.setShort(mIntExpectedCborSizeAtEnd, (short)2, expectedLen);
+    	} else if(intSize == INT_SIZE) {
     		mCBORDecoder.readInt32(tempBuffer, (short)docTypeLength);
     		mCBOREncoder.startByteString(intSize, tempBuffer, (short)docTypeLength);
-    		Util.arrayCopyNonAtomic(mExpectedCborSizeAtEnd, (short) 0, tempBuffer, (short)docTypeLength, intSize);
+    		Util.arrayCopyNonAtomic(tempBuffer, (short)docTypeLength, mIntExpectedCborSizeAtEnd, (short) 0, intSize);
     	} else {
     		ISOException.throwIt(ISO7816.SW_WRONG_DATA);
     	}
 		Util.setShort(tempBuffer, (short)docTypeLength, mCBOREncoder.getCurrentOffset());
-		ICUtil.incrementInteger32(mExpectedCborSizeAtEnd, (short)0, tempBuffer, (short)docTypeLength);
+		ICUtil.incrementInteger32(mIntExpectedCborSizeAtEnd, (short)0, tempBuffer, (short)docTypeLength);
 		updatePrimaryDigest(outBuffer, (short) 0, mCBOREncoder.getCurrentOffset());
     	mCBOREncoder.reset();
     	// Reseting encoder just to make sure docType should not overflow it
@@ -365,7 +372,7 @@ public class JCICProvisioning {
         	numPairs += 2;
         	if(withSecureUserId) {
 	        	byte intSize = mCBORDecoder.getIntegerSize();
-	        	if(intSize == 1) {
+	        	if(intSize == BYTE_SIZE) {
 	        		short secureUserId = mCBORDecoder.readInt8();
 	        		if(secureUserId > (short)0) {
 	        			secureUserIdPresent = true;
@@ -412,16 +419,16 @@ public class JCICProvisioning {
         	mCBOREncoder.encodeBoolean(userAuthRequired);
         	mCBOREncoder.encodeTextString(STR_TIMEOUT_MILIS, (short)0, (short)STR_TIMEOUT_MILIS.length);
         	byte intSize = mCBORDecoder.getIntegerSize();
-        	if(intSize == 1) {
+        	if(intSize == BYTE_SIZE) {
         		//outBuffer[mCBOREncoder.getCurrentOffsetAndIncrease((short) 1)] = (CBORBase.TYPE_BYTE_STRING << 5) | CBORBase.ENCODED_ONE_BYTE;
         		mCBOREncoder.encodeUInt8(mCBORDecoder.readInt8());
-        	} else if (intSize == 2) {
+        	} else if (intSize == SHORT_SIZE) {
         		outBuff[mCBOREncoder.getCurrentOffsetAndIncrease((short) 1)] = (CBORBase.TYPE_UNSIGNED_INTEGER << 5) | CBORBase.ENCODED_TWO_BYTES;
         		Util.arrayCopyNonAtomic(inBuff, (short)(mCBORDecoder.getCurrentOffset() + 1), outBuff, mCBOREncoder.getCurrentOffsetAndIncrease(intSize), (short) intSize);
-        	} else if(intSize == 4) {
+        	} else if(intSize == INT_SIZE) {
         		outBuff[mCBOREncoder.getCurrentOffsetAndIncrease((short) 1)] = (CBORBase.TYPE_UNSIGNED_INTEGER << 5) | CBORBase.ENCODED_FOUR_BYTES;
         		Util.arrayCopyNonAtomic(inBuff, (short)(mCBORDecoder.getCurrentOffset() + 1), outBuff, mCBOREncoder.getCurrentOffsetAndIncrease(intSize), (short) intSize);
-        	} else if(intSize == 8) {
+        	} else if(intSize == LONG_INT_SIZE) {
         		outBuff[mCBOREncoder.getCurrentOffsetAndIncrease((short) 1)] = (CBORBase.TYPE_UNSIGNED_INTEGER << 5) | CBORBase.ENCODED_EIGHT_BYTES;
         		Util.arrayCopyNonAtomic(inBuff, (short)(mCBORDecoder.getCurrentOffset() + 1), outBuff, mCBOREncoder.getCurrentOffsetAndIncrease(intSize), (short) intSize);
         	}
@@ -429,16 +436,16 @@ public class JCICProvisioning {
         	if(withSecureUserId && secureUserIdPresent) {
         		mCBOREncoder.encodeTextString(STR_SECURE_USER_ID, (short)0, (short)STR_SECURE_USER_ID.length);
         		intSize = mCBORDecoder.getIntegerSize();
-            	if(intSize == 1) {
+            	if(intSize == BYTE_SIZE) {
             		//outBuffer[mCBOREncoder.getCurrentOffsetAndIncrease((short) 1)] = (CBORBase.TYPE_BYTE_STRING << 5) | CBORBase.ENCODED_ONE_BYTE;
             		mCBOREncoder.encodeUInt8(mCBORDecoder.readInt8());
-            	} else if (intSize == 2) {
+            	} else if (intSize == SHORT_SIZE) {
             		outBuff[mCBOREncoder.getCurrentOffsetAndIncrease((short) 1)] = (CBORBase.TYPE_UNSIGNED_INTEGER << 5) | CBORBase.ENCODED_TWO_BYTES;
             		Util.arrayCopyNonAtomic(inBuff, (short)(mCBORDecoder.getCurrentOffset() + 1), outBuff, mCBOREncoder.getCurrentOffsetAndIncrease(intSize), (short) intSize);
-            	} else if(intSize == 4) {
+            	} else if(intSize == INT_SIZE) {
             		outBuff[mCBOREncoder.getCurrentOffsetAndIncrease((short) 1)] = (CBORBase.TYPE_UNSIGNED_INTEGER << 5) | CBORBase.ENCODED_FOUR_BYTES;
             		Util.arrayCopyNonAtomic(inBuff, (short)(mCBORDecoder.getCurrentOffset() + 1), outBuff, mCBOREncoder.getCurrentOffsetAndIncrease(intSize), (short) intSize);
-            	} else if(intSize == 8) {
+            	} else if(intSize == LONG_INT_SIZE) {
             		outBuff[mCBOREncoder.getCurrentOffsetAndIncrease((short) 1)] = (CBORBase.TYPE_UNSIGNED_INTEGER << 5) | CBORBase.ENCODED_EIGHT_BYTES;
             		Util.arrayCopyNonAtomic(inBuff, (short)(mCBORDecoder.getCurrentOffset() + 1), outBuff, mCBOREncoder.getCurrentOffsetAndIncrease(intSize), (short) intSize);
             	}
@@ -499,15 +506,20 @@ public class JCICProvisioning {
         mCBOREncoder.encodeTextString(tempBuffer, (short) 0, nameLen);
         
         mCBORDecoder.skipEntry();//AccessControlProfileIds
-        
-        if(mCBORDecoder.getIntegerSize() == (short)1) {
-        	mStatusWords[STATUS_CURRENT_ENTRY_SIZE] = mCBORDecoder.readInt8();
-        } else if(mCBORDecoder.getIntegerSize() == (short)2) {
-        	mStatusWords[STATUS_CURRENT_ENTRY_SIZE] = mCBORDecoder.readInt16();
-        } else {
-            ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
-        }
-        mStatusWords[STATUS_CURRENT_ENTRY_NUM_BYTES_RECEIVED] = (short)0;
+	    Util.arrayFillNonAtomic(mIntCurrentEntrySize, (short)0, (short)INT_SIZE, (byte)0); //Reset currentEntrySize before getting it from parameters
+        byte intSize = mCBORDecoder.getIntegerSize();
+    	if(intSize == BYTE_SIZE) {
+    		byte expectedLen = mCBORDecoder.readInt8();
+    		mIntCurrentEntrySize[3] = expectedLen;
+    	} else if (intSize == SHORT_SIZE) {
+    		short expectedLen = mCBORDecoder.readInt16();
+    		Util.setShort(mIntCurrentEntrySize, (short)2, expectedLen);
+    	} else if(intSize == INT_SIZE) {
+    		mCBORDecoder.readInt32(mIntCurrentEntrySize, (short)0);
+    	} else {
+    		ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+    	}
+	    Util.arrayFillNonAtomic(mIntCurrentEntryNumBytesReceived, (short)0, (short)(INT_SIZE + SHORT_SIZE), (byte)0);
 
         //encode key as value string
         mCBOREncoder.encodeTextString(STR_VALUE, (short)0, (short)STR_VALUE.length);
@@ -545,9 +557,9 @@ public class JCICProvisioning {
         for(short i = (short)0; i < acpIdLen; i++) {
         	//Util.arrayCopyNonAtomic(inBuff, mCBORDecoder.getCurrentOffset(), outBuff, mCBOREncoder.getCurrentOffsetAndIncrease(mCBORDecoder.readLength()), mCBORDecoder.readLength());
         	byte intSize = mCBORDecoder.getIntegerSize();
-        	if(intSize == 1) {
+        	if(intSize == BYTE_SIZE) {
         		mCBOREncoder.encodeUInt8(mCBORDecoder.readInt8());
-        	} else if(intSize == 2) {
+        	} else if(intSize == SHORT_SIZE) {
         		mCBOREncoder.encodeUInt16(mCBORDecoder.readInt16());
         	} else {
                 ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
@@ -604,9 +616,10 @@ public class JCICProvisioning {
         Util.arrayCopyNonAtomic(tempBuffer, contentLen, outBuffer, CryptoManager.AES_GCM_IV_SIZE, contentLen);
         Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_GCM_TAG_POS, outBuffer, (short) (CryptoManager.AES_GCM_IV_SIZE + contentLen), CryptoManager.AES_GCM_TAG_SIZE);
         
-
-        mStatusWords[STATUS_CURRENT_ENTRY_NUM_BYTES_RECEIVED] += contentLen;
-        if(mStatusWords[STATUS_CURRENT_ENTRY_NUM_BYTES_RECEIVED] == mStatusWords[STATUS_CURRENT_ENTRY_SIZE]) {
+        // If done with this entry, close the map
+        Util.setShort(mIntCurrentEntryNumBytesReceived, (short) INT_SIZE, contentLen);
+        ICUtil.incrementInteger32(mIntCurrentEntryNumBytesReceived, (short)0, mIntCurrentEntryNumBytesReceived, (short)INT_SIZE);
+        if(Util.arrayCompare(mIntCurrentEntryNumBytesReceived, (short) 0, mIntCurrentEntrySize, (short) 0, INT_SIZE) == 0) {
             //We need to reset decoder and encoder
             mCBORDecoder.init(receiveBuffer, mAPDUManager.getOffsetIncomingData(), mAPDUManager.getReceivingLength());
         	mCBOREncoder.init(tempBuffer, (short) 0, CryptoManager.TEMP_BUFFER_SIZE);
@@ -621,9 +634,9 @@ public class JCICProvisioning {
             mCBOREncoder.startArray(acpIdLen);
             for(short i = (short)0; i < acpIdLen; i++) {
             	byte intSize = mCBORDecoder.getIntegerSize();
-            	if(intSize == 1) {
+            	if(intSize == BYTE_SIZE) {
             		mCBOREncoder.encodeUInt8(mCBORDecoder.readInt8());
-            	} else if(intSize == 2) {
+            	} else if(intSize == SHORT_SIZE) {
             		mCBOREncoder.encodeUInt16(mCBORDecoder.readInt16());
             	} else {
                     ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
@@ -654,8 +667,10 @@ public class JCICProvisioning {
         mCBOREncoder.encodeBoolean(mCryptoManager.getStatusFlag(CryptoManager.FLAG_TEST_CREDENTIAL));
         updatePrimaryAndSecondaryDigest(tempBuffer, (short) 0, mCBOREncoder.getCurrentOffset());
         mDigest.doFinal(tempBuffer, (short) 0, (short)0, tempBuffer, mCBOREncoder.getCurrentOffset());
-        
-        byte comp = Util.arrayCompare(mExpectedCborSizeAtEnd, (short)0, mCurrentCborSize, (short)0, (short)4);
+
+        // This verifies that the correct expectedProofOfProvisioningSize value was
+        // passed in at eicStartPersonalization() time.
+        byte comp = Util.arrayCompare(mIntExpectedCborSizeAtEnd, (short)0, mIntCurrentCborSize, (short)0, (short)INT_SIZE);
         if(comp != 0) {
         	ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
@@ -691,7 +706,7 @@ public class JCICProvisioning {
 		mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
 		short docTypeLen = mCBORDecoder.readByteString(tempBuffer, (short)0);
 		short dataSize = mCBOREncoder.getCurrentOffset();
-		mCryptoManager.aesGCMEncrypt(outBuffer, (short) 0, mCBOREncoder.getCurrentOffset(), tempBuffer, (short) 0, tempBuffer, (short) 0, docTypeLen, tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS);
+		mCryptoManager.entryptCredentialData(outBuffer, (short) 0, mCBOREncoder.getCurrentOffset(), tempBuffer, (short) 0, tempBuffer, (short) 0, docTypeLen, tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS);
 
         //Output will be nonce|encryptedData|tag
         Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, outBuffer, (short) 0, CryptoManager.AES_GCM_IV_SIZE);

@@ -66,24 +66,22 @@ public class TestUtils {
 	    return (0x9000 == response.getSW());
 	}
 
-	public static boolean addAccessControlProfile(CardSimulator simulator, TestProfile profileData) {
+	public static boolean addAccessControlProfiles(CardSimulator simulator, TestProfile profileData) {
 
 	    CborArray cborArray = CborArray.create();
 	    cborArray.add(CborInteger.create(profileData.id)); //int_8 : id
-	    cborArray.add(CborSimple.create(profileData.userAuthenticationRequired ? 21 : 20)); //boolean : userAuthenticationRequired
+	    cborArray.add(profileData.userAuthenticationRequired ? CborSimple.TRUE : CborSimple.FALSE); //boolean : userAuthenticationRequired
 	    cborArray.add(CborInteger.create(profileData.timeoutMillis)); //int_64 : timeoutMilis
 	    cborArray.add(CborInteger.create(profileData.secureUserId)); //int_64 : secureUserId
-	    cborArray.add(CborByteString.create(TestData.testReaderCertificate)); // byteString : readerCretificate
+    	cborArray.add(CborByteString.create(profileData.readerCertificate)); // byteString : readerCretificate
 	    byte[] inBuff = cborArray.toCborByteArray();
 	    CommandAPDU apdu = null;
 	    ResponseAPDU response = null;
 	    for (short offset = 0; offset < inBuff.length; offset += TestData.MAX_APDU_BUFF_SIZE) {
-		    if(inBuff != null && inBuff.length > TestData.MAX_APDU_BUFF_SIZE) {
-		    	boolean isLast = (short)(offset + TestData.MAX_APDU_BUFF_SIZE) >= inBuff.length;
-		    	short length = !isLast ? (short)(TestData.MAX_APDU_BUFF_SIZE) : (short) (inBuff.length - offset);
-			    apdu = TestUtils.encodeApdu(!isLast, ISO7816.INS_ICS_ADD_ACCESS_CONTROL_PROFILE, (byte) 0x00, (byte) 0x00, inBuff, (short) offset, length);
-			}
-		    response = simulator.transmitCommand(apdu);
+	    	boolean isChainingRequired = ((short)(offset + TestData.MAX_APDU_BUFF_SIZE) <= inBuff.length);
+	    	short length = isChainingRequired ? (short)(TestData.MAX_APDU_BUFF_SIZE) : (short) (inBuff.length - offset);
+		    apdu = TestUtils.encodeApdu(isChainingRequired, ISO7816.INS_ICS_ADD_ACCESS_CONTROL_PROFILE, (byte) 0x00, (byte) 0x00, inBuff, (short) offset, length);
+			response = simulator.transmitCommand(apdu);
 		    Assert.assertEquals(0x9000, response.getSW());
 	    }
 	    System.out.println("addAccessControlProfile Response : ");
@@ -94,12 +92,14 @@ public class TestUtils {
 	    return (0x9000 == response.getSW());
 	}
 
-	public static boolean addEntry(CardSimulator simulator, TestEntryData entryData) {
+	public static boolean addEntry(CardSimulator simulator, int chunkSize, TestEntryData entryData) {
+		int entryValueLenght = entryData.valueCbor.length;
+		
 		CborArray additionalDataCbor = CborArray.create();
 		additionalDataCbor.add(CborTextString.create(entryData.nameSpace));
 		additionalDataCbor.add(CborTextString.create(entryData.name));
 		additionalDataCbor.add(CborArray.createFromJavaObject(entryData.profileIds));
-		additionalDataCbor.add(CborInteger.create(entryData.valueCbor.length));
+		additionalDataCbor.add(CborInteger.create(entryValueLenght));
 	    byte[] inBuff = additionalDataCbor.toCborByteArray();
 
 	    CommandAPDU apdu = TestUtils.encodeApdu(false, ISO7816.INS_ICS_BEGIN_ADD_ENTRY, (byte) 0x00, (byte) 0x00, inBuff, (short) 0, (short) inBuff.length);
@@ -117,14 +117,34 @@ public class TestUtils {
 		additionalDataCbor.add(CborTextString.create(entryData.nameSpace));
 		additionalDataCbor.add(CborTextString.create(entryData.name));
 		additionalDataCbor.add(CborArray.createFromJavaObject(entryData.profileIds));
-		additionalDataCbor.add(CborInteger.create(entryData.valueCbor.length));
-		CborArray cborArray = CborArray.create();
-		cborArray.add(additionalDataCbor);
-		cborArray.add(CborByteString.create(entryData.valueCbor));
-	    inBuff = cborArray.toCborByteArray();
+		additionalDataCbor.add(CborInteger.create(entryValueLenght));
+		
+		int noOfChunks = (entryValueLenght + chunkSize - 1) / chunkSize;
+	    int pos = 0;
+	    int processedLength = 0;
+	    for (int n = 0; n < noOfChunks; n++) {
+	        int size = entryValueLenght - pos;
+	        if (size > chunkSize) {
+	            size = chunkSize;
+	        }
+			CborArray cborArray = CborArray.create();
+			cborArray.add(additionalDataCbor);
+			cborArray.add(CborByteString.create(entryData.valueCbor, pos, size));
+		    inBuff = cborArray.toCborByteArray();
 
-	    apdu = TestUtils.encodeApdu(false, ISO7816.INS_ICS_ADD_ENTRY_VALUE, (byte) 0x00, (byte) 0x00, inBuff, (short) 0, (short) inBuff.length);
-	    response = simulator.transmitCommand(apdu);
+		    processedLength += size;
+		    
+		    for (short offset = 0; offset < inBuff.length; offset += TestData.MAX_APDU_BUFF_SIZE) {
+		    	boolean isChainingRequired = ((short)(offset + TestData.MAX_APDU_BUFF_SIZE) <= inBuff.length);
+		    	short length = isChainingRequired ? (short)(TestData.MAX_APDU_BUFF_SIZE) : (short) (inBuff.length - offset);
+			    apdu = TestUtils.encodeApdu(isChainingRequired, ISO7816.INS_ICS_ADD_ENTRY_VALUE, (byte) 0x00, (byte) 0x00, inBuff, (short) offset, length);
+				response = simulator.transmitCommand(apdu);
+			    Assert.assertEquals(0x9000, response.getSW());
+		    }
+	        pos += chunkSize;
+	    }
+	    System.out.println("entryValueLenght : " + entryValueLenght + " & processedLength : " + processedLength);
+	    
 	    System.out.println("addEntryValue Response : ");
 	    for(int i = 0; i < response.getBytes().length; i++) {
 	    	System.out.print(String.format("%02X", response.getBytes()[i]));

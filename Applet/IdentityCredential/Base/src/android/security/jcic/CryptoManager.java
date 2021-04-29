@@ -45,7 +45,7 @@ public class CryptoManager {
     public static final byte EC_KEY_SIZE = 32;
     public static final byte DIGEST_SIZE = 32;
 
-    public static final short TEMP_BUFFER_SIZE = 256;
+    public static final short TEMP_BUFFER_SIZE = 2048;
     public static final short TEMP_BUFFER_DOCTYPE_MAXSIZE = 64;
     public static final short TEMP_BUFFER_DOCTYPE_POS = TEMP_BUFFER_SIZE;
     public static final short TEMP_BUFFER_IV_POS = TEMP_BUFFER_DOCTYPE_POS + TEMP_BUFFER_DOCTYPE_MAXSIZE;
@@ -55,7 +55,7 @@ public class CryptoManager {
     private final KMSEProvider mCryptoProvider;
     
     // Hardware bound key, initialized during Applet installation
-    private final AESKey mHBK;
+    private final byte[] mHBK;
     
     // Storage key for a credential
     private final byte[] mCredentialStorageKey;
@@ -114,8 +114,8 @@ public class CryptoManager {
         // Secure Random number generation for HBK
         mRandomData = RandomData.getInstance(RandomData.ALG_TRNG);
         mRandomData.nextBytes(mTempBuffer, (short)0, AES_GCM_KEY_SIZE);
-        mHBK = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
-        mHBK.setKey(mTempBuffer, (short)0);
+        mHBK = JCSystem.makeTransientByteArray(AES_GCM_KEY_SIZE, JCSystem.CLEAR_ON_RESET);
+        Util.arrayCopyNonAtomic(mTempBuffer, (short) 0, mHBK, (short) 0, AES_GCM_KEY_SIZE);
         
         // Overwrite this new HBK key in the buffer and initialize a test key 
         //Util.arrayFillNonAtomic(mTempBuffer, (short) 0, AES_GCM_KEY_SIZE, (byte) 0);
@@ -194,13 +194,6 @@ public class CryptoManager {
         return (short) (AES_GCM_KEY_SIZE * 8);
     }
     
-    /**
-     * Return Hardware Backed Key associated with applet.
-     */
-    AESKey getHBK() {
-    	return mHBK;
-    }
-
     void createCredentialStorageKey(boolean testCredential) {
         // Check if it is a test credential
         if(testCredential) { // Test credential
@@ -305,5 +298,20 @@ public class CryptoManager {
     			authData, authDataOffset, authDataLen,
     			outNonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
 		*/
+    }
+    
+    short entryptCredentialData(byte[] data, short dataOffset, short dataLen,
+    		byte[] outData, short outDataOffset,
+    		byte[] authData, short authDataOffset, short authDataLen,
+    		byte[] outNonceAndTag, short outNonceAndTagOff) {
+
+        // Generate the IV
+        mRandomData.nextBytes(outNonceAndTag, outNonceAndTagOff, AES_GCM_IV_SIZE);
+    	return mCryptoProvider.aesGCMEncrypt(mHBK, (short)0, (short)mHBK.length,
+    			data, dataOffset, dataLen,
+    			outData, outDataOffset,
+    			outNonceAndTag, (short)outNonceAndTagOff, AES_GCM_IV_SIZE,
+    			authData, authDataOffset, authDataLen,
+    			outNonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
     }
 }
