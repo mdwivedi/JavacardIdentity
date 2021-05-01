@@ -137,11 +137,11 @@ public class ICUtil {
 		byte carry = (byte)0;
 		while(index > (byte)0) {
 			if(index >= (byte)2) {
-		    	short a1 = (short)(integer[iStart + index] & 0x00FF);
-		    	short a2 = (short)(shortArr[sStart + index - (short)2] & 0x00FF);
+		    	short a1 = (short)(integer[(short)(iStart + index)] & 0x00FF);
+		    	short a2 = (short)(shortArr[(short)(sStart + index - (short)2)] & 0x00FF);
 				sum = (short)(carry + a1 + a2);
 			} else {
-		    	short a1 = (short)(integer[iStart + index] & 0x00FF);
+		    	short a1 = (short)(integer[(short)(iStart + index)] & 0x00FF);
 				sum = (short)(carry + a1);
 			}
 			integer[index] = (byte)sum;

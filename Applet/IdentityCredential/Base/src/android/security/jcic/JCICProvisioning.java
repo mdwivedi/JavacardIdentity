@@ -129,14 +129,13 @@ public class JCICProvisioning {
 	}
 
 	public void reset() {
-		mCryptoManager.reset();
-		mAPDUManager.reset();
 	    Util.arrayFillNonAtomic(mIntExpectedCborSizeAtEnd, (short)0, (short)INT_SIZE, (byte)0);
 	    Util.arrayFillNonAtomic(mIntCurrentCborSize, (short)0, (short)(INT_SIZE + SHORT_SIZE), (byte)0);
 	    Util.arrayFillNonAtomic(mIntCurrentEntrySize, (short)0, (short)INT_SIZE, (byte)0);
 	    Util.arrayFillNonAtomic(mIntCurrentEntryNumBytesReceived, (short)0, (short)(INT_SIZE + SHORT_SIZE), (byte)0);
-	    
-	    mDigest.reset();
+        Util.arrayFillNonAtomic(mAdditionalDataSha256, (short)0, CryptoManager.DIGEST_SIZE, (byte)0);
+
+        mDigest.reset();
 	    mSecondaryDigest.reset();
 	    mAdditionalDataDigester.reset();
 	    
@@ -188,6 +187,7 @@ public class JCICProvisioning {
 	}
 
 	private void processCreateCredential() {
+        reset();
         byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
         
         boolean isTestCredential = Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) == 0x1;
@@ -201,9 +201,17 @@ public class JCICProvisioning {
         mCryptoManager.createCredentialStorageKey(isTestCredential);
 
         mCryptoManager.createEcKeyPairAndAttestation(isTestCredential);
-        
+
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENIAL_PERSONALIZATION_STATE, false);
         // Credential keys are loaded
         mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENIAL_KEYS_INITIALIZED, true);
+
+        short le = mAPDUManager.setOutgoing();
+        byte[] outBuffer = mAPDUManager.getSendBuffer();
+        mCBOREncoder.init(outBuffer, (short) 0, le);
+        mCBOREncoder.startArray((short)1);
+        mCBOREncoder.encodeUInt8((byte)0); //Success
+        mAPDUManager.setOutgoingLength(mCBORDecoder.getCurrentOffset());
 	}
 	
 	private void processStartPersonalization() {
@@ -316,8 +324,13 @@ public class JCICProvisioning {
         mAPDUManager.setOutgoingLength((short)MessageDigest.LENGTH_SHA_256);*/
         // Set the Applet in the PERSONALIZATION state
         mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENIAL_PERSONALIZATION_STATE, true);
-		
-	}
+
+        mCBOREncoder.reset();
+        mCBOREncoder.init(outBuffer, (short) 0, le);
+        mCBOREncoder.startArray((short)1);
+        mCBOREncoder.encodeUInt8((byte)0); //Success
+        mAPDUManager.setOutgoingLength(mCBORDecoder.getCurrentOffset());
+    }
 
 	private void processAddAccessControlProfile() {
         mCryptoManager.assertInPersonalizationState();
@@ -348,10 +361,16 @@ public class JCICProvisioning {
         outLength = constructCBORAccessControl(receiveBuffer, mAPDUManager.getOffsetIncomingData(), mAPDUManager.getReceivingLength(),
         									outBuffer, (short)0, le, false);
         updatePrimaryAndSecondaryDigest(outBuffer, (short)0, outLength);
-        
-        Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, outBuffer, (short) 0, (short)(CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE));
 
-        mAPDUManager.setOutgoingLength((short)(CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE));
+        mCBOREncoder.reset();
+        mCBOREncoder.init(outBuffer, (short) 0, le);
+        mCBOREncoder.startArray((short)2);
+        mCBOREncoder.encodeUInt8((byte)0); //Success
+        mCBOREncoder.startArray((short)1);
+        mCBOREncoder.encodeByteString(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, (short)(CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE));
+        mAPDUManager.setOutgoingLength(mCBORDecoder.getCurrentOffset());
+        //Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, outBuffer, (short) 0, (short)(CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE));
+        //mAPDUManager.setOutgoingLength((short)(CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE));
 	}
 	
 	private short constructCBORAccessControl(byte[] inBuff, short inOffset, short inLen,
@@ -527,6 +546,12 @@ public class JCICProvisioning {
         updatePrimaryAndSecondaryDigest(outBuffer, (short) 0, mCBOREncoder.getCurrentOffset());
     	
     	mStatusWords[STATUS_CURRENT_NAMESPACE_NUM_PROCESSED] += (short) 1;
+
+        mCBOREncoder.reset();
+        mCBOREncoder.init(outBuffer, (short) 0, le);
+        mCBOREncoder.startArray((short)1);
+        mCBOREncoder.encodeUInt8((byte)0); //Success
+        mAPDUManager.setOutgoingLength(mCBOREncoder.getCurrentOffset());
 	}
 
 	private short constAndCalcCBOREntryAdditionalData(byte[] inBuff, short inOffset, short inLen,
@@ -602,7 +627,7 @@ public class JCICProvisioning {
         short contentLen = mCBORDecoder.readByteString(tempBuffer, (short) 0);
         updatePrimaryAndSecondaryDigest(tempBuffer, (short) 0, contentLen);
         
-        if((contentLen * 2) > CryptoManager.TEMP_BUFFER_SIZE) {
+        if((short)(contentLen * 2) > CryptoManager.TEMP_BUFFER_SIZE) {
         	ISOException.throwIt(ISO7816.SW_INSUFFICIENT_MEMORY);
         }
         //Encrypt content and additional data as aad
@@ -611,12 +636,20 @@ public class JCICProvisioning {
         		tempBuffer, contentLen, //Out encrypted data
         		outBuffer, (short)0, additionalDataLen, //Auth data
         		tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS); //nonce and tag
-        
+
+        mCBOREncoder.reset();
+        mCBOREncoder.init(outBuffer, (short)0, le);
+        mCBOREncoder.startArray((short)2);
+        mCBOREncoder.encodeUInt8((byte)0); //Success
+        mCBOREncoder.startArray((short)1);
+        mCBOREncoder.startByteString((short) (CryptoManager.AES_GCM_IV_SIZE + contentLen + CryptoManager.AES_GCM_TAG_SIZE));
         //Output will be nonce|encryptedData|tag
-        Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, outBuffer, (short) 0, CryptoManager.AES_GCM_IV_SIZE);
-        Util.arrayCopyNonAtomic(tempBuffer, contentLen, outBuffer, CryptoManager.AES_GCM_IV_SIZE, contentLen);
-        Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_GCM_TAG_POS, outBuffer, (short) (CryptoManager.AES_GCM_IV_SIZE + contentLen), CryptoManager.AES_GCM_TAG_SIZE);
-        
+        Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, outBuffer, mCBOREncoder.getCurrentOffset(), CryptoManager.AES_GCM_IV_SIZE);
+        Util.arrayCopyNonAtomic(tempBuffer, contentLen, outBuffer, (short)(mCBOREncoder.getCurrentOffset() + CryptoManager.AES_GCM_IV_SIZE), contentLen);
+        Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_GCM_TAG_POS, outBuffer, (short) (mCBOREncoder.getCurrentOffset() + CryptoManager.AES_GCM_IV_SIZE + contentLen), CryptoManager.AES_GCM_TAG_SIZE);
+        // nonce, encrypted content and tag are already copied to outBuffer
+        mAPDUManager.setOutgoingLength((short) (mCBOREncoder.getCurrentOffset() + CryptoManager.AES_GCM_IV_SIZE + contentLen + CryptoManager.AES_GCM_TAG_SIZE));
+
         // If done with this entry, close the map
         Util.setShort(mIntCurrentEntryNumBytesReceived, (short) INT_SIZE, contentLen);
         ICUtil.incrementInteger32(mIntCurrentEntryNumBytesReceived, (short)0, mIntCurrentEntryNumBytesReceived, (short)INT_SIZE);
@@ -645,9 +678,6 @@ public class JCICProvisioning {
             }
             updatePrimaryAndSecondaryDigest(tempBuffer, (short) 0, mCBOREncoder.getCurrentOffset());
         }
-        
-        // nonce, encrypted content and tag are already copied to outBuffer 
-        mAPDUManager.setOutgoingLength((short) (CryptoManager.AES_GCM_IV_SIZE + contentLen + CryptoManager.AES_GCM_TAG_SIZE));
 	}
 
 	private void processFinishAddingEntries() {
@@ -677,8 +707,14 @@ public class JCICProvisioning {
         }
 
         short signLen = mCryptoManager.signPreSharedHash(tempBuffer, mCBOREncoder.getCurrentOffset(), outBuffer, (short) 0);
-        
-        mAPDUManager.setOutgoingLength(signLen);
+        Util.arrayCopyNonAtomic(outBuffer, (short) 0, tempBuffer, (short)0, signLen);
+        mCBOREncoder.reset();
+        mCBOREncoder.init(outBuffer, (short)0, le);
+        mCBOREncoder.startArray((short)2);
+        mCBOREncoder.encodeUInt8((byte)0); //Success
+        mCBOREncoder.startArray((short)1);
+        mCBOREncoder.encodeByteString(tempBuffer, (short)0, signLen);
+        mAPDUManager.setOutgoingLength(mCBOREncoder.getCurrentOffset());
 	}
 
 	private void processFinishGetCredentialData() {
@@ -713,12 +749,16 @@ public class JCICProvisioning {
 				tempBuffer, (short) 0, docTypeLen, //Auth data
 				tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS); //Nonce and tag
 
+        mCBOREncoder.reset();
+        mCBOREncoder.init(outBuffer, (short)0, le);
+        mCBOREncoder.startArray((short)2);
+        mCBOREncoder.encodeUInt8((byte)0); //Success
+        mCBOREncoder.startArray((short)1);
+        mCBOREncoder.startByteString((short)(CryptoManager.AES_GCM_IV_SIZE + dataSize + CryptoManager.AES_GCM_TAG_SIZE));
         //Output will be nonce|encryptedData|tag
-        Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, outBuffer, (short) 0, CryptoManager.AES_GCM_IV_SIZE);
-        Util.arrayCopyNonAtomic(tempBuffer, (short) 0, outBuffer, CryptoManager.AES_GCM_IV_SIZE, dataSize);
-        Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_GCM_TAG_POS, outBuffer, (short) (CryptoManager.AES_GCM_IV_SIZE + dataSize), CryptoManager.AES_GCM_TAG_SIZE);
-        
-        mAPDUManager.setOutgoingLength((short)(CryptoManager.AES_GCM_IV_SIZE + dataSize + CryptoManager.AES_GCM_TAG_SIZE));
-        
+        Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, outBuffer, mCBOREncoder.getCurrentOffset(), CryptoManager.AES_GCM_IV_SIZE);
+        Util.arrayCopyNonAtomic(tempBuffer, (short) 0, outBuffer, (short) (mCBOREncoder.getCurrentOffset() + CryptoManager.AES_GCM_IV_SIZE), dataSize);
+        Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_GCM_TAG_POS, outBuffer, (short) (mCBOREncoder.getCurrentOffset() + CryptoManager.AES_GCM_IV_SIZE + dataSize), CryptoManager.AES_GCM_TAG_SIZE);
+        mAPDUManager.setOutgoingLength((short)(mCBOREncoder.getCurrentOffset() + CryptoManager.AES_GCM_IV_SIZE + dataSize + CryptoManager.AES_GCM_TAG_SIZE));
 	}
 }

@@ -117,7 +117,6 @@ public class TestUtils {
 		additionalDataCbor.add(CborTextString.create(entryData.nameSpace));
 		additionalDataCbor.add(CborTextString.create(entryData.name));
 		additionalDataCbor.add(CborArray.createFromJavaObject(entryData.profileIds));
-		additionalDataCbor.add(CborInteger.create(entryValueLenght));
 		
 		int noOfChunks = (entryValueLenght + chunkSize - 1) / chunkSize;
 	    int pos = 0;
