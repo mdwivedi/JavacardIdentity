@@ -8,7 +8,7 @@ import com.android.javacard.keymaster.KMType;
 public class CryptoProviderImpl implements ICryptoProvider{
 	KMSEProvider kmSEProvider;
 	
-	public CryptoProviderImpl() {
+	CryptoProviderImpl() {
 		kmSEProvider = new KMJCardSimulator();
 	}
 

@@ -29,8 +29,8 @@ public interface ISO7816 extends javacard.framework.ISO7816 {
     /**
      * Credential provisioning instructions
      */
-    public static final byte INS_ICS_CREATE_CREDENTIAL = (byte) 0x10;
-    public static final byte INS_ICS_GET_ATTESTATION_CERT = (byte) 0x11;
+    public static final byte INS_ICS_PROVISIONING_INIT = (byte) 0x10;
+    public static final byte INS_ICS_CREATE_CREDENTIAL_KEY = (byte) 0x11;
     public static final byte INS_ICS_START_PERSONALIZATION = (byte) 0x12;
     public static final byte INS_ICS_ADD_ACCESS_CONTROL_PROFILE = (byte) 0x13;
     public static final byte INS_ICS_BEGIN_ADD_ENTRY = (byte) 0x14;

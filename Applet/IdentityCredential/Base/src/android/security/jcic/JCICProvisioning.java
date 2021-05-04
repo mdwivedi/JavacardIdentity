@@ -158,10 +158,11 @@ public class JCICProvisioning {
         byte[] buf = mAPDUManager.getReceiveBuffer();
 
         switch(buf[ISO7816.OFFSET_INS]) {
-	        case ISO7816.INS_ICS_CREATE_CREDENTIAL:
-	            processCreateCredential();
+	        case ISO7816.INS_ICS_PROVISIONING_INIT:
+                processProvisioningInit();
 	            break;
-	        case ISO7816.INS_ICS_GET_ATTESTATION_CERT:
+	        case ISO7816.INS_ICS_CREATE_CREDENTIAL_KEY:
+                processCreateCredentialKey();
 	            break;
 	        case ISO7816.INS_ICS_START_PERSONALIZATION:
 	        	processStartPersonalization();
@@ -186,10 +187,10 @@ public class JCICProvisioning {
         }
 	}
 
-	private void processCreateCredential() {
+    private void processProvisioningInit() {
         reset();
         byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
-        
+
         boolean isTestCredential = Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) == 0x1;
         mCryptoManager.setStatusFlag(CryptoManager.FLAG_TEST_CREDENTIAL, isTestCredential);
 
@@ -197,10 +198,8 @@ public class JCICProvisioning {
         if(!isTestCredential && Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
         }
-        
-        mCryptoManager.createCredentialStorageKey(isTestCredential);
 
-        mCryptoManager.createEcKeyPairAndAttestation(isTestCredential);
+        mCryptoManager.createCredentialStorageKey(isTestCredential);
 
         mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENIAL_PERSONALIZATION_STATE, false);
         // Credential keys are loaded
@@ -211,7 +210,27 @@ public class JCICProvisioning {
         mCBOREncoder.init(outBuffer, (short) 0, le);
         mCBOREncoder.startArray((short)1);
         mCBOREncoder.encodeUInt8((byte)0); //Success
-        mAPDUManager.setOutgoingLength(mCBORDecoder.getCurrentOffset());
+        mAPDUManager.setOutgoingLength(mCBOREncoder.getCurrentOffset());
+    }
+
+	private void processCreateCredentialKey() {
+        mAPDUManager.receiveAll();
+        byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
+        byte[] tempBuffer = mCryptoManager.getTempBuffer();
+
+        //If P1P2 other than 0000 and 0001 throw exception
+        if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
+            ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+        }
+
+        mCryptoManager.createEcKeyPairAndAttestation(mCryptoManager.getStatusFlag(CryptoManager.FLAG_TEST_CREDENTIAL));
+
+        short le = mAPDUManager.setOutgoing(true);
+        byte[] outBuffer = mAPDUManager.getSendBuffer();
+        mCBOREncoder.init(outBuffer, (short) 0, le);
+        mCBOREncoder.startArray((short)1);
+        mCBOREncoder.encodeUInt8((byte)0); //Success
+        mAPDUManager.setOutgoingLength(mCBOREncoder.getCurrentOffset());
 	}
 	
 	private void processStartPersonalization() {
@@ -329,7 +348,7 @@ public class JCICProvisioning {
         mCBOREncoder.init(outBuffer, (short) 0, le);
         mCBOREncoder.startArray((short)1);
         mCBOREncoder.encodeUInt8((byte)0); //Success
-        mAPDUManager.setOutgoingLength(mCBORDecoder.getCurrentOffset());
+        mAPDUManager.setOutgoingLength(mCBOREncoder.getCurrentOffset());
     }
 
 	private void processAddAccessControlProfile() {
@@ -368,7 +387,7 @@ public class JCICProvisioning {
         mCBOREncoder.encodeUInt8((byte)0); //Success
         mCBOREncoder.startArray((short)1);
         mCBOREncoder.encodeByteString(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, (short)(CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE));
-        mAPDUManager.setOutgoingLength(mCBORDecoder.getCurrentOffset());
+        mAPDUManager.setOutgoingLength(mCBOREncoder.getCurrentOffset());
         //Util.arrayCopyNonAtomic(tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, outBuffer, (short) 0, (short)(CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE));
         //mAPDUManager.setOutgoingLength((short)(CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE));
 	}

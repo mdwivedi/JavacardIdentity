@@ -87,8 +87,8 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 	            case ISO7816.INS_ICS_GET_HARDWARE_INFO:
 	                processGetHardwareInfo();
 	                break;
-	            case ISO7816.INS_ICS_CREATE_CREDENTIAL:
-	            case ISO7816.INS_ICS_GET_ATTESTATION_CERT:
+	            case ISO7816.INS_ICS_PROVISIONING_INIT:
+	            case ISO7816.INS_ICS_CREATE_CREDENTIAL_KEY:
 	            case ISO7816.INS_ICS_START_PERSONALIZATION:
 	            case ISO7816.INS_ICS_ADD_ACCESS_CONTROL_PROFILE:
 	            case ISO7816.INS_ICS_BEGIN_ADD_ENTRY:
