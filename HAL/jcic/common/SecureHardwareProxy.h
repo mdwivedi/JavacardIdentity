@@ -41,6 +41,7 @@ using ::std::vector;
 
 // Forward declare.
 //
+class SecureHardwareProxy;
 class SecureHardwareProvisioningProxy;
 class SecureHardwarePresentationProxy;
 
@@ -51,8 +52,20 @@ class SecureHardwareProxyFactory : public RefBase {
     SecureHardwareProxyFactory() {}
     virtual ~SecureHardwareProxyFactory() {}
 
+    virtual sp<SecureHardwareProxy> createHardwareProxy() = 0;
     virtual sp<SecureHardwareProvisioningProxy> createProvisioningProxy() = 0;
     virtual sp<SecureHardwarePresentationProxy> createPresentationProxy() = 0;
+};
+
+// The proxy used for common functionality.
+//
+class SecureHardwareProxy : public RefBase {
+  public:
+    SecureHardwareProxy() {}
+    virtual ~SecureHardwareProxy() {}
+
+    virtual bool getHardwareInfo(string* storeName, string* storeAuthorName,
+                                 int32_t* gcmChunkSize, bool* isDirectAccess, vector<string>* supportedDocTypes) = 0;
 };
 
 // The proxy used for provisioning.

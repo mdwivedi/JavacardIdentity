@@ -27,11 +27,26 @@ namespace aidl::android::hardware::identity {
 ndk::ScopedAStatus IdentityCredentialStore::getHardwareInformation(
         HardwareInformation* hardwareInformation) {
     HardwareInformation hw;
-    hw.credentialStoreName = "JavaCard Identity Credential Implementation";
+
+    sp<::android::hardware::identity::SecureHardwareProxy> hwProxy = hwProxyFactory_->createHardwareProxy();
+    LOG(INFO) << "created HardwareProxy";
+    if(!hwProxy->getHardwareInfo(&hw.credentialStoreName, &hw.credentialStoreAuthorName, &hw.dataChunkSize,
+                                &hw.isDirectAccess, &hw.supportedDocTypes)) {
+        return ndk::ScopedAStatus(AStatus_fromServiceSpecificErrorWithMessage(
+                IIdentityCredentialStore::STATUS_FAILED,
+                "Error getting HardwareInformation"));
+    }
+    kGcmChunkSize = hw.dataChunkSize;
+    LOG(INFO) << "HardwareInfo credentialStoreName :" << hw.credentialStoreName;
+    LOG(INFO) << "HardwareInfo credentialStoreAuthorName :" << hw.credentialStoreAuthorName;
+    LOG(INFO) << "HardwareInfo dataChunkSize :" << hw.dataChunkSize;
+    LOG(INFO) << "HardwareInfo isDirectAccess :" << hw.isDirectAccess;
+
+/*    hw.credentialStoreName = "JavaCard Identity Credential Implementation";
     hw.credentialStoreAuthorName = "Google";
     hw.dataChunkSize = kGcmChunkSize;
     hw.isDirectAccess = false;
-    hw.supportedDocTypes = {};
+    hw.supportedDocTypes = {};*/
     *hardwareInformation = hw;
     return ndk::ScopedAStatus::ok();
 }

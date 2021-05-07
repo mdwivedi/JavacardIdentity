@@ -15,8 +15,7 @@
  */
 
 #define LOG_TAG "JCSecureHardwareProxy"
-
-#include "JCSecureHardwareProxy.h"
+#define ENABLE_JAVA_CARD 1
 
 #include <android/hardware/identity/support/IdentityCredentialSupport.h>
 
@@ -42,7 +41,15 @@
 #include <openssl/x509.h>
 #include <openssl/x509_vfy.h>
 
+#ifdef ENABLE_JAVA_CARD
+#include <cppbor/cppbor.h>
+#include <cppbor/cppbor_parse.h>
+#include "AppletConnection.h"
+#else
 #include <libeic.h>
+#endif
+
+#include "JCSecureHardwareProxy.h"
 
 using ::std::optional;
 using ::std::string;
@@ -52,31 +59,219 @@ using ::std::vector;
 namespace android::hardware::identity {
 // ----------------------------------------------------------------------
 
+JCSecureHardwareProxy::JCSecureHardwareProxy() {}
+
+JCSecureHardwareProxy::~JCSecureHardwareProxy() {
+    mAppletConnection.close();
+}
+
+bool JCSecureHardwareProxy::getHardwareInfo(string* storeName, string* storeAuthorName,
+                                 int32_t* gcmChunkSize, bool* isDirectAccess, vector<string>* supportedDocTypes) {
+    LOG(INFO) << "JCSecureHardwareProxy getHardwareInfo";
+#ifdef ENABLE_JAVA_CARD
+    if (!mAppletConnection.connectToTransportClient()) {
+        return false;
+    }
+
+    // Initiate communication to applet
+    if (!mAppletConnection.isChannelOpen()) {
+        ResponseApdu selectResponse = mAppletConnection.openChannelToApplet();
+        if (!selectResponse.ok() || selectResponse.status() != AppletConnection::SW_OK) {
+            return false;
+        }
+    }
+
+    // Send the command to the applet to create a new credential
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_GET_HARDWARE_INFO, 0, 0};
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return false;
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    LOG(INFO) << "INS_ICS_GET_HARDWARE_INFO returned response size " << response.dataSize();
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_GET_HARDWARE_INFO response is not valid CBOR: " << message;
+        return false;
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 2) {
+        LOG(ERROR) << "INS_ICS_GET_HARDWARE_INFO response is not an array with two elements";
+        return false;
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_GET_HARDWARE_INFO response is not success";
+        return false;
+    }
+    const cppbor::Array* returnArray = (*arrayItem)[1]->asArray();
+    if (returnArray == nullptr || returnArray->size() != 5) {
+        LOG(ERROR) << "INS_ICS_GET_HARDWARE_INFO returned invalid response";
+        return false;
+    }
+    const cppbor::Tstr* cborStoreName = (*returnArray)[0]->asTstr();
+    *storeName = std::string(cborStoreName->value());
+    const cppbor::Tstr* cborStoreAuthorName = (*returnArray)[1]->asTstr();
+    *storeAuthorName = std::string(cborStoreAuthorName->value());
+    const cppbor::Uint* cborGsmChunkSize = (*returnArray)[2]->asUint();
+    LOG(INFO) << "INS_ICS_GET_HARDWARE_INFO gcmChunkSize : " << cborGsmChunkSize->value();
+    *gcmChunkSize = cborGsmChunkSize->value();
+    const cppbor::Simple* cborIsDirectAccess = (*returnArray)[3]->asSimple();
+    *isDirectAccess = (cborIsDirectAccess->asBool())->value();
+    const cppbor::Array* cborSupportedDotTypes = (*returnArray)[4]->asArray();
+    if(cborSupportedDotTypes->size() > 0) {
+        vector<std::string> docTypeVec(cborSupportedDotTypes->size());
+        for(size_t i = 0; i < cborSupportedDotTypes->size(); i++) {
+            docTypeVec[i] = std::string(((*cborSupportedDotTypes)[i]->asTstr())->value());
+        }
+        *supportedDocTypes = docTypeVec;
+    } else {
+        vector<std::string> emptyVec(0);
+        *supportedDocTypes = emptyVec;
+    }
+
+    return true;
+#else
+    return false;
+#endif
+}
+
 JCSecureHardwareProvisioningProxy::JCSecureHardwareProvisioningProxy() {}
 
 JCSecureHardwareProvisioningProxy::~JCSecureHardwareProvisioningProxy() {}
 
 bool JCSecureHardwareProvisioningProxy::shutdown() {
-    LOG(INFO) << "JCSecureHardwarePresentationProxy shutdown";
+    LOG(INFO) << "JCSecureHardwareProvisioningProxy shutdown";
+    mAppletConnection.close();
     return true;
 }
 
 bool JCSecureHardwareProvisioningProxy::initialize(bool testCredential) {
     LOG(INFO) << "JCSecureHardwareProvisioningProxy created, sizeof(EicProvisioning): "
               << sizeof(EicProvisioning);
+#ifdef ENABLE_JAVA_CARD
+    if (!mAppletConnection.connectToTransportClient()) {
+        return false;
+    }
+
+    // Initiate communication to applet
+    if (!mAppletConnection.isChannelOpen()) {
+        ResponseApdu selectResponse = mAppletConnection.openChannelToApplet();
+        if (!selectResponse.ok() || selectResponse.status() != AppletConnection::SW_OK) {
+            return false;
+        }
+    }
+
+    // Send the command to the applet to create a new credential
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_PROVISIONING_INIT, 0,
+                        testCredential};
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return false;
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_PROVISIONING_INIT response is not valid CBOR: " << message;
+        return false;
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 1) {
+        LOG(ERROR) << "INS_ICS_PROVISIONING_INIT response is not an array with one elements";
+        return false;
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_PROVISIONING_INIT response is not success";
+        return false;
+    }
+    return true;
+#else
     return eicProvisioningInit(&ctx_, testCredential);
+#endif
 }
 
 bool JCSecureHardwareProvisioningProxy::initializeForUpdate(
         bool testCredential, string docType, vector<uint8_t> encryptedCredentialKeys) {
+#ifdef ENABLE_JAVA_CARD
+        return false;
+#else
     return eicProvisioningInitForUpdate(&ctx_, testCredential, docType.c_str(),
                                         encryptedCredentialKeys.data(),
                                         encryptedCredentialKeys.size());
+#endif
 }
 
 // Returns public key certificate.
 optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::createCredentialKey(
         const vector<uint8_t>& challenge, const vector<uint8_t>& applicationId) {
+    LOG(INFO) << "JCSecureHardwareProvisioningProxy createCredentialKey ";
+#ifdef ENABLE_JAVA_CARD
+
+    if (!mAppletConnection.connectToTransportClient()) {
+        return {};
+    }
+
+    // Initiate communication to applet
+    if (!mAppletConnection.isChannelOpen()) {
+        ResponseApdu selectResponse = mAppletConnection.openChannelToApplet();
+        if (!selectResponse.ok() || selectResponse.status() != AppletConnection::SW_OK) {
+            return {};
+        }
+    }
+
+    // Send the command to the applet to create a new credential
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_CREATE_CREDENTIAL_KEY, 0, 0};
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return {};
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_CREATE_CREDENTIAL_KEY response is not valid CBOR: " << message;
+        return {};
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 2) {
+        LOG(ERROR) << "INS_ICS_CREATE_CREDENTIAL_KEY response is not an array with two elements";
+        return {};
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_CREATE_CREDENTIAL_KEY response is not success";
+        return {};
+    }
+    const cppbor::Array* returnArray = (*arrayItem)[1]->asArray();
+    const cppbor::Bstr* pubKeyBstr = (*returnArray)[0]->asBstr();
+    const vector<uint8_t> pubKey = pubKeyBstr->value();
+
+    optional<vector<vector<uint8_t>>> certChain =  android::hardware::identity::support::createAttestationForEcPublicKey(
+                    pubKey, challenge, applicationId);
+    // Extract certificate chain.
+    vector<uint8_t> pubKeyCert =
+            android::hardware::identity::support::certificateChainJoin(certChain.value());
+
+    return pubKeyCert;
+#else
     uint8_t publicKeyCert[4096];
     size_t publicKeyCertSize = sizeof publicKeyCert;
     if (!eicProvisioningCreateCredentialKey(&ctx_, challenge.data(), challenge.size(),
@@ -87,23 +282,124 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::createCredentialKey
     vector<uint8_t> pubKeyCert(publicKeyCertSize);
     memcpy(pubKeyCert.data(), publicKeyCert, publicKeyCertSize);
     return pubKeyCert;
+#endif
 }
 
 bool JCSecureHardwareProvisioningProxy::startPersonalization(
         int accessControlProfileCount, vector<int> entryCounts, const string& docType,
         size_t expectedProofOfProvisioningSize) {
+    LOG(INFO) << "JJCSecureHardwareProvisioningProxy::startPersonalization ";
+
+#ifdef ENABLE_JAVA_CARD
+    cppbor::Array pArray;
+    cppbor::Array entryCountArray;
+    for (auto id : entryCounts) {
+        entryCountArray.add(id);
+    }
+    pArray.add(docType)
+            .add(accessControlProfileCount)
+            .add(std::move(entryCountArray))
+            .add(expectedProofOfProvisioningSize);
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    // Send the command to the applet to create a new credential
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_START_PERSONALIZATION, 0,
+                        0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return false;
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_START_PERSONALIZATION response is not valid CBOR: " << message;
+        return false;
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 1) {
+        LOG(ERROR) << "INS_ICS_START_PERSONALIZATION response is not an array with one elements";
+        return false;
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_START_PERSONALIZATION response is not success";
+        return false;
+    }
+    return true;
+#else
+
     if (!eicProvisioningStartPersonalization(&ctx_, accessControlProfileCount, entryCounts.data(),
                                              entryCounts.size(), docType.c_str(),
                                              expectedProofOfProvisioningSize)) {
         return false;
     }
     return true;
+#endif
 }
 
 // Returns MAC (28 bytes).
 optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::addAccessControlProfile(
         int id, const vector<uint8_t>& readerCertificate, bool userAuthenticationRequired,
         uint64_t timeoutMillis, uint64_t secureUserId) {
+
+#ifdef ENABLE_JAVA_CARD
+    LOG(INFO) << "JJCSecureHardwareProvisioningProxy::addAccessControlProfile ";
+
+    cppbor::Array pArray;
+    pArray.add(id)
+            .add(userAuthenticationRequired)
+            .add(timeoutMillis)
+            .add(secureUserId)
+            .add(std::move(readerCertificate));
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    // Send the command to the applet to create a new credential
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_ADD_ACCESS_CONTROL_PROFILE, 0,
+                        0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return {};
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_ADD_ACCESS_CONTROL_PROFILE response is not valid CBOR: " << message;
+        return {};
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 2) {
+        LOG(ERROR) << "INS_ICS_ADD_ACCESS_CONTROL_PROFILE response is not an array with two elements";
+        return {};
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_ADD_ACCESS_CONTROL_PROFILE response is not success";
+        return {};
+    }
+    const cppbor::Array* returnArray = (*arrayItem)[1]->asArray();
+    const cppbor::Bstr* macBstr = (*returnArray)[0]->asBstr();
+    const vector<uint8_t> mac = macBstr->value();
+    if(mac.size() != 28) {
+        LOG(ERROR) << "INS_ICS_ADD_ACCESS_CONTROL_PROFILE returned invalid size of mac " << mac.size();
+        return {};
+    }
+
+    return mac;
+#else
     vector<uint8_t> mac(28);
     if (!eicProvisioningAddAccessControlProfile(
                 &ctx_, id, readerCertificate.data(), readerCertificate.size(),
@@ -111,21 +407,127 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::addAccessControlPro
         return {};
     }
     return mac;
+#endif
 }
 
 bool JCSecureHardwareProvisioningProxy::beginAddEntry(const vector<int>& accessControlProfileIds,
                                                         const string& nameSpace, const string& name,
                                                         uint64_t entrySize) {
+#ifdef ENABLE_JAVA_CARD
+    LOG(INFO) << "JJCSecureHardwareProvisioningProxy::beginAddEntry ";
+
+    cppbor::Array cborProfileIDs;
+    for(size_t i = 0; i < accessControlProfileIds.size(); i++) {
+        cborProfileIDs.add(accessControlProfileIds[i]);
+    }
+
+    cppbor::Array pArray;
+    pArray.add(nameSpace)
+            .add(name)
+            .add(std::move(cborProfileIDs))
+            .add(entrySize);
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    // Send the command to the applet to create a new credential
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_BEGIN_ADD_ENTRY, 0,
+                        0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return false;
+    }
+
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_BEGIN_ADD_ENTRY response is not valid CBOR: " << message;
+        return false;
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 1) {
+        LOG(ERROR) << "INS_ICS_BEGIN_ADD_ENTRY response is not an array with one elements";
+        return false;
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_BEGIN_ADD_ENTRY response is not success";
+        return false;
+    }
+    return true;
+#else
     uint8_t scratchSpace[512];
     return eicProvisioningBeginAddEntry(&ctx_, accessControlProfileIds.data(),
                                         accessControlProfileIds.size(), nameSpace.c_str(),
                                         name.c_str(), entrySize, scratchSpace, sizeof scratchSpace);
+#endif
 }
 
 // Returns encryptedContent.
 optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::addEntryValue(
         const vector<int>& accessControlProfileIds, const string& nameSpace, const string& name,
         const vector<uint8_t>& content) {
+#ifdef ENABLE_JAVA_CARD
+    LOG(INFO) << "JJCSecureHardwareProvisioningProxy::addEntryValue ";
+
+    cppbor::Array cborProfileIDs;
+    for(size_t i = 0; i < accessControlProfileIds.size(); i++) {
+        cborProfileIDs.add(accessControlProfileIds[i]);
+    }
+    cppbor::Array additionalDataArray;
+    additionalDataArray.add(nameSpace)
+            .add(name)
+            .add(std::move(cborProfileIDs));
+    cppbor::Array pArray;
+    pArray.add(std::move(additionalDataArray))
+        .add(std::move(content));
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    // Send the command to the applet to create a new credential
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_ADD_ENTRY_VALUE, 0,
+                        0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return {};
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_ADD_ENTRY_VALUE response is not valid CBOR: " << message;
+        return {};
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 2) {
+        LOG(ERROR) << "INS_ICS_ADD_ENTRY_VALUE response is not an array with two elements";
+        return {};
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_ADD_ENTRY_VALUE response is not success";
+        return {};
+    }
+    const cppbor::Array* returnArray = (*arrayItem)[1]->asArray();
+    const cppbor::Bstr* encryptedContentBstr = (*returnArray)[0]->asBstr();
+    const vector<uint8_t> encryptedContent = encryptedContentBstr->value();
+    if(encryptedContent.size() != content.size() + 28) {
+        LOG(ERROR) << "INS_ICS_ADD_ENTRY_VALUE returned invalid size of encrypted content.";
+        return {};
+    }
+
+    return encryptedContent;
+#else
     vector<uint8_t> eicEncryptedContent;
     uint8_t scratchSpace[512];
     eicEncryptedContent.resize(content.size() + 28);
@@ -136,20 +538,116 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::addEntryValue(
         return {};
     }
     return eicEncryptedContent;
+#endif
 }
 
 // Returns signatureOfToBeSigned (EIC_ECDSA_P256_SIGNATURE_SIZE bytes).
 optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::finishAddingEntries() {
     vector<uint8_t> signatureOfToBeSigned(EIC_ECDSA_P256_SIGNATURE_SIZE);
+#ifdef ENABLE_JAVA_CARD
+    LOG(INFO) << "JJCSecureHardwareProvisioningProxy::finishAddingEntries ";
+
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_FINISH_ADDING_ENTRIES, 0,
+                        0};
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return {};
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_FINISH_ADDING_ENTRIES response is not valid CBOR: " << message;
+        return {};
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 2) {
+        LOG(ERROR) << "INS_ICS_FINISH_ADDING_ENTRIES response is not an array with two elements";
+        return {};
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_FINISH_ADDING_ENTRIES response is not success";
+        return {};
+    }
+    const cppbor::Array* returnArray = (*arrayItem)[1]->asArray();
+    const cppbor::Bstr* signatureOfToBeSignedBstr = (*returnArray)[0]->asBstr();
+    const vector<uint8_t> derSignature = signatureOfToBeSignedBstr->value();
+
+    ECDSA_SIG* sig;
+    const unsigned char* p = derSignature.data();
+    sig = d2i_ECDSA_SIG(nullptr, &p, derSignature.size());
+    if (sig == nullptr) {
+        LOG(ERROR) << "INS_ICS_FINISH_ADDING_ENTRIES Error decoding DER signature";
+        return {};
+    }
+
+    if (BN_bn2binpad(sig->r, signatureOfToBeSigned.data(), 32) != 32) {
+        LOG(ERROR) << "INS_ICS_FINISH_ADDING_ENTRIES Error encoding r";
+        return {};
+    }
+    if (BN_bn2binpad(sig->s, signatureOfToBeSigned.data() + 32, 32) != 32) {
+        LOG(ERROR) << "INS_ICS_FINISH_ADDING_ENTRIES Error encoding s";
+        return {};
+    }
+
+#else
     if (!eicProvisioningFinishAddingEntries(&ctx_, signatureOfToBeSigned.data())) {
         return {};
     }
+#endif
     return signatureOfToBeSigned;
 }
 
 // Returns encryptedCredentialKeys.
 optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::finishGetCredentialData(
         const string& docType) {
+#ifdef ENABLE_JAVA_CARD
+    LOG(INFO) << "JJCSecureHardwareProvisioningProxy::finishGetCredentialData ";
+    cppbor::Array pArray;
+    pArray.add(docType);
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_FINISH_GET_CREDENTIAL_DATA, 0,
+                        0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return {};
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_FINISH_GET_CREDENTIAL_DATA response is not valid CBOR: " << message;
+        return {};
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 2) {
+        LOG(ERROR) << "INS_ICS_FINISH_GET_CREDENTIAL_DATA response is not an array with two elements";
+        return {};
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_FINISH_GET_CREDENTIAL_DATA response is not success";
+        return {};
+    }
+    const cppbor::Array* returnArray = (*arrayItem)[1]->asArray();
+    const cppbor::Bstr* encryptedCredentialKeysBstr = (*returnArray)[0]->asBstr();
+    const vector<uint8_t> encryptedCredentialKeys = encryptedCredentialKeysBstr->value();
+
+    return encryptedCredentialKeys;
+#else
     vector<uint8_t> encryptedCredentialKeys(116);
     size_t size = encryptedCredentialKeys.size();
     if (!eicProvisioningFinishGetCredentialData(&ctx_, docType.c_str(),
@@ -158,6 +656,7 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::finishGetCredential
     }
     encryptedCredentialKeys.resize(size);
     return encryptedCredentialKeys;
+#endif
 }
 
 // ----------------------------------------------------------------------

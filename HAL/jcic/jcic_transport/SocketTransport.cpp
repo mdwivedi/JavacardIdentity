@@ -18,45 +18,46 @@
 #include <arpa/inet.h>
 #include <android-base/logging.h>
 #include <vector>
-#include "Transport.h"
+#include "TransportClient.h"
 #include <errno.h>
 
 #define PORT    8080
 //#define IPADDR  "192.168.0.29"
-#define IPADDR  "192.168.0.5"
+#define IPADDR  "192.168.100.3"
 #define MAX_RECV_BUFFER_SIZE 2500
 
 namespace se_transport {
 
 bool SocketTransport::openConnection() {
-	struct sockaddr_in serv_addr;
-	if ((mSocket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-	{
+    struct sockaddr_in serv_addr;
+    LOG(INFO) << "Opening socket connection " << IPADDR << ":" << PORT;
+    if ((mSocket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
         LOG(ERROR) << "Socket creation failed" << " Error: "<<strerror(errno);
-		return false;
-	}
+        return false;
+    }
 
-	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_port = htons(PORT);
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(PORT);
 
-	// Convert IPv4 and IPv6 addresses from text to binary form
-	if(inet_pton(AF_INET, IPADDR, &serv_addr.sin_addr)<=0)
-	{
+    // Convert IPv4 and IPv6 addresses from text to binary form
+    if(inet_pton(AF_INET, IPADDR, &serv_addr.sin_addr)<=0)
+    {
         LOG(ERROR) << "Invalid address/ Address not supported.";
         return false;
-	}
+    }
 
-	if (connect(mSocket, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
-	{
+    if (connect(mSocket, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+    {
         close(mSocket);
         LOG(ERROR) << "Connection failed. Error: " << strerror(errno);
         return false;
-	}
+    }
     socketStatus = true;
     return true;
 }
 
-bool SocketTransport::sendData(const uint8_t* inData, const size_t inLen, std::vector<uint8_t>& output) {
+bool SocketTransport::transmit(const std::vector<uint8_t> inData, std::vector<uint8_t>& output) {
     uint8_t buffer[MAX_RECV_BUFFER_SIZE];
     int count = 1;
     while(!socketStatus && count++ < 5 ) {
@@ -70,13 +71,13 @@ bool SocketTransport::sendData(const uint8_t* inData, const size_t inLen, std::v
         return false;
     }
 
-	if (0 > send(mSocket, inData, inLen , 0 )) {
+	if (0 > send(mSocket, inData.data(), inData.size(), 0 )) {
         static int connectionResetCnt = 0; /* To avoid loop */
         if (ECONNRESET == errno && connectionResetCnt == 0) {
             //Connection reset. Try open socket and then sendData.
             socketStatus = false;
             connectionResetCnt++;
-            return sendData(inData, inLen, output);
+            return transmit(inData, output);
         }
         LOG(ERROR) << "Failed to send data over socket err: " << errno;
         connectionResetCnt = 0;

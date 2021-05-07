@@ -34,8 +34,8 @@ class IdentityCredentialStore : public BnIdentityCredentialStore {
     IdentityCredentialStore(sp<SecureHardwareProxyFactory> hwProxyFactory)
         : hwProxyFactory_(hwProxyFactory) {}
 
-    // The GCM chunk size used by this implementation is 64 KiB.
-    static constexpr size_t kGcmChunkSize = 64 * 1024;
+    // The GCM chunk size used by this implementation is 1 KiB.
+    static constexpr size_t kGcmChunkSize = 1024;
 
     // Methods from IIdentityCredentialStore follow.
     ndk::ScopedAStatus getHardwareInformation(HardwareInformation* hardwareInformation) override;

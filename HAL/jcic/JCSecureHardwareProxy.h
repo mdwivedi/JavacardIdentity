@@ -19,11 +19,25 @@
 
 #include <libeic.h>
 
+#include "jcic_transport/AppletConnection.h"
 #include "SecureHardwareProxy.h"
 
 namespace android::hardware::identity {
 
-// This implementation uses libEmbeddedIC in-process.
+// This implementation uses javacard IC implementation.
+//
+class JCSecureHardwareProxy : public SecureHardwareProxy {
+  public:
+    JCSecureHardwareProxy();
+    virtual ~JCSecureHardwareProxy();
+
+    bool getHardwareInfo(string* storeName, string* storeAuthorName,
+                                 int32_t* gcmChunkSize, bool* isDirectAccess, vector<string>* supportedDocTypes) override;
+  protected:
+    AppletConnection mAppletConnection;
+};
+
+// This implementation uses javacard IC implementation.
 //
 class JCSecureHardwareProvisioningProxy : public SecureHardwareProvisioningProxy {
   public:
@@ -68,9 +82,10 @@ class JCSecureHardwareProvisioningProxy : public SecureHardwareProvisioningProxy
 
   protected:
     EicProvisioning ctx_;
+    AppletConnection mAppletConnection;
 };
 
-// This implementation uses libEmbeddedIC in-process.
+// This implementation uses javacard IC implementation.
 //
 class JCSecureHardwarePresentationProxy : public SecureHardwarePresentationProxy {
   public:
@@ -145,6 +160,10 @@ class JCSecureHardwareProxyFactory : public SecureHardwareProxyFactory {
   public:
     JCSecureHardwareProxyFactory() {}
     virtual ~JCSecureHardwareProxyFactory() {}
+
+    sp<SecureHardwareProxy> createHardwareProxy() override {
+        return new JCSecureHardwareProxy();
+    }
 
     sp<SecureHardwareProvisioningProxy> createProvisioningProxy() override {
         return new JCSecureHardwareProvisioningProxy();
