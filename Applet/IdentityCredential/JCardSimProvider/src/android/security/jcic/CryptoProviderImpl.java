@@ -41,4 +41,17 @@ public class CryptoProviderImpl implements ICryptoProvider{
 				authTagLen);
 	}
 
+	@Override
+	public boolean aesGCMDecrypt(byte[] aesKey, short aesKeyStart, short aesKeyLen, byte[] data, short dataStart,
+							   short dataLen, byte[] encData, short encDataStart, byte[] nonce, short nonceStart, short nonceLen,
+							   byte[] authData, short authDataStart, short authDataLen, byte[] authTag, short authTagStart,
+							   short authTagLen) {
+		return kmSEProvider.aesGCMDecrypt(aesKey, aesKeyStart, aesKeyLen,
+				data, dataStart, dataLen,
+				encData, encDataStart,
+				nonce, nonceStart, nonceLen,
+				authData, authDataStart, authDataLen,
+				authTag, authTagStart, authTagLen);
+	}
+
 }
