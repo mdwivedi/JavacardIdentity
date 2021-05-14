@@ -57,6 +57,14 @@ public interface ICryptoProvider {
 	      short pubModStart,
 	      short pubModLength);
 
+	ICryptoOperation initECSignWithSHA256DigestOperation(
+			byte[] privKeyBuf,
+			short privKeyStart,
+			short privKeyLength,
+			byte[] pubModBuf,
+			short pubModStart,
+			short pubModLength);
+
 	  /**
 	   * This is a oneshot operation that performs encryption operation using AES GCM algorithm. It
 	   * throws CryptoException if algorithm is not supported or if tag length is not equal to 16 or

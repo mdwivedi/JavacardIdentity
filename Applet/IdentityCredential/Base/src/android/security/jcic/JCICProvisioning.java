@@ -662,7 +662,7 @@ final class JCICProvisioning {
         	ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
 
-        short signLen = mCryptoManager.signPreSharedHash(tempBuffer, mCBOREncoder.getCurrentOffset(), outBuffer, (short) 0);
+        short signLen = mCryptoManager.ecSignPreSharedHash(tempBuffer, mCBOREncoder.getCurrentOffset(), outBuffer, (short) 0);
         Util.arrayCopyNonAtomic(outBuffer, (short) 0, tempBuffer, (short)0, signLen);
         mCBOREncoder.reset();
         mCBOREncoder.init(outBuffer, (short)0, le);

@@ -54,4 +54,13 @@ public class CryptoProviderImpl implements ICryptoProvider{
 				authTag, authTagStart, authTagLen);
 	}
 
+	@Override
+	public ICryptoOperation initECSignWithSHA256DigestOperation(byte[] privKeyBuf, short privKeyStart, short privKeyLength, byte[] pubModBuf, short pubModStart, short pubModLength) {
+
+		KMOperation signer = kmSEProvider.initAsymmetricOperation(KMType.SIGN, KMType.EC,  KMType.PADDING_NONE , KMType.SHA2_256,
+				privKeyBuf, privKeyStart, privKeyLength, //Private key
+				pubModBuf, pubModStart, pubModLength); //Public key
+
+		return new CryptoOperationImpl(signer);
+	}
 }
