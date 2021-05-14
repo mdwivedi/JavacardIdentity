@@ -48,9 +48,40 @@ public class TestUtils {
 	
 	public static boolean setupWritableCredential(CardSimulator simulator, boolean testCredential) {
 		byte p2 = testCredential ? (byte)0x01 : (byte)0x00;
-		CommandAPDU apdu = new CommandAPDU(new byte[] {(byte) 0x80, ISO7816.INS_ICS_CREATE_CREDENTIAL, (byte) 0x00, p2, (byte) 0x00});
+		CommandAPDU apdu = new CommandAPDU(new byte[] {(byte) 0x80, ISO7816.INS_ICS_PROVISIONING_INIT, (byte) 0x00, p2, (byte) 0x00});
 	    ResponseAPDU response = simulator.transmitCommand(apdu);
 	    return (0x9000 == response.getSW());
+	}
+
+	public static AttestationData getAttestationCertificate(CardSimulator simulator, byte[] challenge, byte[] applicationId) {
+		AttestationData attestationData = null;
+
+		CborArray cborArray = CborArray.create();
+		cborArray.add(CborByteString.create(challenge));
+		cborArray.add(CborByteString.create(applicationId));
+		byte[] inBuff = cborArray.toCborByteArray();
+
+		CommandAPDU apdu = TestUtils.encodeApdu(false, ISO7816.INS_ICS_CREATE_CREDENTIAL_KEY, (byte) 0x00, (byte) 0x00, inBuff, (short) 0, (short) inBuff.length);
+		ResponseAPDU response = simulator.transmitCommand(apdu);
+		Assert.assertEquals(0x9000, response.getSW());
+		System.out.println("getAttestationCertificate Response : ");
+		for(int i = 0; i < response.getBytes().length; i++) {
+			System.out.print(String.format("%02X", response.getBytes()[i]));
+		}
+		System.out.println();
+		try {
+			CborArray attestationCertArray = (CborArray)CborArray.createFromCborByteArray(response.getData(), (short)0, response.getData().length);
+			attestationData = new AttestationData();
+			Iterator<CborObject> itr = attestationCertArray.iterator();
+
+			attestationData.attestationChallenge = challenge;
+			attestationData.attestationApplicationId = applicationId;
+			//attestationData.attestationCertificate =
+			//TODO get attestation certificates
+		} catch (CborParseException e) {
+			Assert.fail();
+		}
+		return attestationData;
 	}
 
 	public static boolean startPersonalization(CardSimulator simulator, PersonalizationData personalizationData) {
@@ -181,7 +212,7 @@ public class TestUtils {
 	public static CommandAPDU encodeApdu(boolean isChaining, byte ins, byte p1, byte p2, byte[] inBuff, short offset, short length) {
 		short apduLength = 0;
 		byte[] buf = new byte[2500];
-		buf[0] = isChaining ? (byte) 0x58 : (byte) 0x80; apduLength++;
+		buf[0] = (byte)((byte)0x80 | (isChaining ? (byte) 0x10 : (byte) 0x00)); apduLength++;
 		buf[1] = ins; apduLength++;
 		buf[2] = p1; apduLength++;
 		buf[3] = p2; apduLength++;

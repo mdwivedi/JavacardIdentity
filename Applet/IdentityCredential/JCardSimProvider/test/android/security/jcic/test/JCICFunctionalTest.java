@@ -8,8 +8,6 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.google.iot.cbor.CborByteString;
-import com.google.iot.cbor.CborTextString;
 import com.licel.jcardsim.smartcardio.CardSimulator;
 import com.licel.jcardsim.utils.AIDUtil;
 
@@ -27,7 +25,7 @@ public class JCICFunctionalTest {
 	@Before
 	public void init() {
 	    // Create simulator
-	    AID appletAID = AIDUtil.create("A00000006203020C010101");
+	    AID appletAID = AIDUtil.create("A000000476020C010101");
 	    simulator.installApplet(appletAID, JCardSimJCICStoreApplet.class);
 	    // Select applet
 	    simulator.selectApplet(appletAID);
@@ -35,7 +33,7 @@ public class JCICFunctionalTest {
 
 	@After
 	public void cleanUp() {
-		AID appletAID = AIDUtil.create("A00000006203020C010101");
+		AID appletAID = AIDUtil.create("A000000476020C010101");
 		// Delete i.e. uninstall applet
 		simulator.deleteApplet(appletAID);
 	}
@@ -56,7 +54,7 @@ public class JCICFunctionalTest {
 		Assert.assertTrue(TestUtils.setupWritableCredential(simulator, true /* testCredential */));
 
 	    //Wrong P2 value
-		CommandAPDU apdu = new CommandAPDU(new byte[] {(byte) 0x80, ISO7816.INS_ICS_CREATE_CREDENTIAL, (byte) 0x00, (byte) 0x02, (byte) 0x00});
+		CommandAPDU apdu = new CommandAPDU(new byte[] {(byte) 0x80, ISO7816.INS_ICS_PROVISIONING_INIT, (byte) 0x00, (byte) 0x02, (byte) 0x00});
 	    ResponseAPDU response = simulator.transmitCommand(apdu);
 	    Assert.assertNotEquals(0x9000, response.getSW());
 	}
@@ -113,6 +111,9 @@ public class JCICFunctionalTest {
 		
 		Assert.assertTrue(TestUtils.setupWritableCredential(simulator, false /* testCredential */));
 
+		AttestationData attestationData = TestUtils.getAttestationCertificate(simulator, "NotSoRandomChallenge1".getBytes(), new byte[]{});
+		Assert.assertNotNull(attestationData);
+
 	    PersonalizationData personalizationData = new PersonalizationData("org.iso.18013-5.2019.mdl", 1, new int[] {1}, 185 + TestData.testReaderCertificate1.length);
 	    Assert.assertTrue(TestUtils.startPersonalization(simulator, personalizationData));
 	    
@@ -133,7 +134,10 @@ public class JCICFunctionalTest {
 		Assert.assertNotNull(hardwareInfo);
 		
 		Assert.assertTrue(TestUtils.setupWritableCredential(simulator, false /* testCredential */));
-	    TestProfile[] testProfiles = {new TestProfile(1, TestData.testReaderCertificate1, true, 1), 
+		AttestationData attestationData = TestUtils.getAttestationCertificate(simulator, "NotSoRandomChallenge".getBytes(), new byte[]{});
+		Assert.assertNotNull(attestationData);
+
+		TestProfile[] testProfiles = {new TestProfile(1, TestData.testReaderCertificate1, true, 1),
 	    								new TestProfile(2, TestData.testReaderCertificate2, true, 2)};
 
 	    PersonalizationData personalizationData = new PersonalizationData("org.iso.18013-5.2019.mdl",
@@ -169,6 +173,10 @@ public class JCICFunctionalTest {
 		Assert.assertNotNull(hardwareInfo);
 		
 		Assert.assertTrue(TestUtils.setupWritableCredential(simulator, false /* testCredential */));
+
+		AttestationData attestationData = TestUtils.getAttestationCertificate(simulator, "NotSoRandomChallenge".getBytes(), new byte[]{});
+		Assert.assertNotNull(attestationData);
+
 	    TestProfile[] testProfiles = {new TestProfile(0, TestData.testReaderCertificate1, false, 0), 
 	    								new TestProfile(1, TestData.testReaderCertificate2, true, 1), 
 	    								new TestProfile(2, new byte[0], false, 0)};

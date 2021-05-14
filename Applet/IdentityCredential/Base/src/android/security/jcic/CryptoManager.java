@@ -36,7 +36,7 @@ public class CryptoManager {
     public static final byte AES_GCM_TAG_SIZE = 16; 
     public static final byte AES_GCM_IV_SIZE = 12;
     public static final byte EC_KEY_SIZE = 32;
-    public static final byte DIGEST_SIZE = 32;
+    public static final byte SHA256_DIGEST_SIZE = 32;
 
     public static final short TEMP_BUFFER_SIZE = 2048;
     public static final short TEMP_BUFFER_DOCTYPE_MAXSIZE = 64;
@@ -117,7 +117,7 @@ public class CryptoManager {
 
         // Create the storage key byte array 
         mCredentialStorageKey = JCSystem.makeTransientByteArray(AES_GCM_KEY_SIZE, JCSystem.CLEAR_ON_RESET);
-        mCredentialKeyPair = JCSystem.makeTransientByteArray((short)(EC_KEY_SIZE * 4), JCSystem.CLEAR_ON_RESET);
+        mCredentialKeyPair = JCSystem.makeTransientByteArray((short)(EC_KEY_SIZE * 3 + 1), JCSystem.CLEAR_ON_RESET);
         mCredentialKeyPairLengths = JCSystem.makeTransientShortArray((short)2, JCSystem.CLEAR_ON_RESET);
         
         //mCipher = AEADCipher.getInstance(AEADCipher.ALG_AES_GCM, AEADCipher.PAD_PKCS1, false);
@@ -197,12 +197,26 @@ public class CryptoManager {
         }
     }
     
-    void getCreadentialStorageKey(byte[] storageKey, short skStart) {
-    	Util.arrayCopyNonAtomic(mCredentialStorageKey, (short) 0, storageKey, skStart, AES_GCM_KEY_SIZE);
+    short getCredentialStorageKey(byte[] storageKey, short skStart) {
+        if(storageKey != null) {
+            Util.arrayCopyNonAtomic(mCredentialStorageKey, (short) 0, storageKey, skStart, AES_GCM_KEY_SIZE);
+        }
+        return AES_GCM_KEY_SIZE;
+    }
+
+    short setCredentialStorageKey(byte[] storageKey, short skStart) {
+        if(storageKey != null) {
+            Util.arrayCopyNonAtomic(storageKey, skStart, mCredentialStorageKey, (short) 0, AES_GCM_KEY_SIZE);
+        }
+        return AES_GCM_KEY_SIZE;
+    }
+
+    void createEcKeyPair(byte[] keyPairBlob, short keyBlobStart, short[] keyPairLengths) {
+        mCryptoProvider.createECKey(keyPairBlob, keyBlobStart, EC_KEY_SIZE, keyPairBlob, (short)(keyBlobStart + EC_KEY_SIZE), (short) (EC_KEY_SIZE * 2 + 1), keyPairLengths);
     }
 
     void createEcKeyPairAndAttestation(boolean isTestCredential) {
-    	mCryptoProvider.createECKey(mCredentialKeyPair, (short)0, EC_KEY_SIZE, mCredentialKeyPair, EC_KEY_SIZE, (short)(EC_KEY_SIZE * 3), mCredentialKeyPairLengths);
+        createEcKeyPair(mCredentialKeyPair, (short)0, mCredentialKeyPairLengths);
 
         // Only include TAG_IDENTITY_CREDENTIAL_KEY if it's not a test credential
         if (!isTestCredential) {
@@ -210,12 +224,30 @@ public class CryptoManager {
         }
     }
     
-    void getCredentialEcKey(byte[] credentialEcKey, short start) {
-    	Util.arrayCopyNonAtomic(mCredentialKeyPair, (short) 0, credentialEcKey, start, EC_KEY_SIZE);
+    short getCredentialEcKey(byte[] credentialEcKey, short start) {
+        if(credentialEcKey != null) {
+            Util.arrayCopyNonAtomic(mCredentialKeyPair, (short) 0, credentialEcKey, start, mCredentialKeyPairLengths[0]);
+        }
+    	return mCredentialKeyPairLengths[0];
     }
-    
-    short signPreSharedHash(byte[] sha256Hash, short hashOffset, byte[] signBuff, short signBuffOffset) {
-    	/* Test data */
+
+    short setCredentialEcKey(byte[] credentialEcKey, short start) {
+        if(credentialEcKey != null) {
+            Util.arrayCopyNonAtomic(credentialEcKey, start, mCredentialKeyPair, (short) 0, EC_KEY_SIZE);
+            mCredentialKeyPairLengths[0] = EC_KEY_SIZE;
+        }
+        return EC_KEY_SIZE;
+    }
+
+    short getCredentialEcPubKey(byte[] credentialEcPubKey, short start) {
+        if(credentialEcPubKey != null) {
+            Util.arrayCopyNonAtomic(mCredentialKeyPair, mCredentialKeyPairLengths[0], credentialEcPubKey, start, mCredentialKeyPairLengths[1]);
+        }
+        return mCredentialKeyPairLengths[1];
+    }
+
+    short ecSignPreSharedHash(byte[] sha256Hash, short hashOffset, byte[] signBuff, short signBuffOffset) {
+    	/* Test data
     	byte[] privKey = new byte[] {(byte) 0x03, (byte) 0x64, (byte) 0x3d, (byte) 0x30, (byte) 0x2e, (byte) 0xad, (byte) 0xbe, (byte) 0x58, (byte) 0x21, (byte) 0xb7, (byte) 0xad, (byte) 0xa2, (byte) 0x21, (byte) 0x45, (byte) 0xfb, (byte) 0x8b, (byte) 0x35, (byte) 0x0a, (byte) 0x6e, (byte) 0x1c, (byte) 0x2a, (byte) 0x42, (byte) 0x50, (byte) 0x11, (byte) 0x46, (byte) 0x2d, (byte) 0xea, (byte) 0x38, (byte) 0x28, (byte) 0x4c, (byte) 0xfe, (byte) 0x7b};
     	sha256Hash = new byte[] {(byte) 0x55, (byte) 0xa1, (byte) 0x22, (byte) 0x0f, (byte) 0x97, (byte) 0x4d, (byte) 0x86, (byte) 0xe6, (byte) 0xff, (byte) 0x0c, (byte) 0x5f, (byte) 0x19, (byte) 0x79, (byte) 0xe7, (byte) 0x7d, (byte) 0xef, (byte) 0x71, (byte) 0xdf, (byte) 0xbd, (byte) 0x92, (byte) 0xa7, (byte) 0x21, (byte) 0xe3, (byte) 0x0d, (byte) 0x8f, (byte) 0x34, (byte) 0x8e, (byte) 0xfd, (byte) 0xa6, (byte) 0xf4, (byte) 0x0f, (byte) 0xe2};
     	hashOffset = (short) 0;
@@ -226,9 +258,17 @@ public class CryptoManager {
     																mCredentialKeyPair, (short)0, mCredentialKeyPairLengths[0], //Private key
     																mCredentialKeyPair, EC_KEY_SIZE, mCredentialKeyPairLengths[1]); //Public key
     	
-    	return signer.sign(sha256Hash, hashOffset, DIGEST_SIZE, signBuff, signBuffOffset);
+    	return signer.sign(sha256Hash, hashOffset, SHA256_DIGEST_SIZE, signBuff, signBuffOffset);
     }
-    
+
+    short ecSign(byte[] data, short dataOffset, short dataLen, byte[] signBuff, short signBuffOffset) {
+        ICryptoOperation signer = mCryptoProvider.initECSignWithSHA256DigestOperation(
+                mCredentialKeyPair, (short)0, mCredentialKeyPairLengths[0], //Private key
+                mCredentialKeyPair, EC_KEY_SIZE, mCredentialKeyPairLengths[1]); //Public key
+
+        return signer.sign(data, dataOffset, dataLen, signBuff, signBuffOffset);
+    }
+
     void setStatusFlag(byte flag, boolean isSet) {
     	ICUtil.setBit(mStatusFlags, flag, isSet);
     }
@@ -317,6 +357,29 @@ public class CryptoManager {
 	    			outNonceAndTag, (short)outNonceAndTagOff, AES_GCM_IV_SIZE,
 	    			authData, authDataOffset, authDataLen,
 	    			outNonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
+        }
+    }
+
+    boolean decryptCredentialData(boolean isTestCredential, byte[] encryptedCredentialKeyBlob, short keyBlobOff, short keyBlobSize,
+                                            byte[] outData, short outDataOffset,
+                                            byte[] nonce, short nonceOffset, short nonceLen,
+                                            byte[] authData, short authDataOffset, short authDataLen,
+                                            byte[] authTag, short authTagOffset, short authTagLen) {
+
+        if(isTestCredential) {
+            return mCryptoProvider.aesGCMDecrypt(mCredentialStorageKey, (short)0, (short)mCredentialStorageKey.length,
+                    encryptedCredentialKeyBlob, keyBlobOff, keyBlobSize,
+                    outData, outDataOffset,
+                    nonce, nonceOffset, nonceLen,
+                    authData, authDataOffset, authDataLen,
+                    authTag, authTagOffset, authTagLen);
+        } else {
+            return mCryptoProvider.aesGCMDecrypt(mHBK, (short)0, (short)mHBK.length,
+                    encryptedCredentialKeyBlob, keyBlobOff, keyBlobSize,
+                    outData, outDataOffset,
+                    nonce, nonceOffset, nonceLen,
+                    authData, authDataOffset, authDataLen,
+                    authTag, authTagOffset, authTagLen);
         }
     }
 }

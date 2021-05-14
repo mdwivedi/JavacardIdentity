@@ -8,7 +8,7 @@ import com.android.javacard.keymaster.KMType;
 public class CryptoProviderImpl implements ICryptoProvider{
 	KMSEProvider kmSEProvider;
 	
-	public CryptoProviderImpl() {
+	CryptoProviderImpl() {
 		kmSEProvider = new KMJCardSimulator();
 	}
 
@@ -41,4 +41,26 @@ public class CryptoProviderImpl implements ICryptoProvider{
 				authTagLen);
 	}
 
+	@Override
+	public boolean aesGCMDecrypt(byte[] aesKey, short aesKeyStart, short aesKeyLen, byte[] data, short dataStart,
+							   short dataLen, byte[] encData, short encDataStart, byte[] nonce, short nonceStart, short nonceLen,
+							   byte[] authData, short authDataStart, short authDataLen, byte[] authTag, short authTagStart,
+							   short authTagLen) {
+		return kmSEProvider.aesGCMDecrypt(aesKey, aesKeyStart, aesKeyLen,
+				data, dataStart, dataLen,
+				encData, encDataStart,
+				nonce, nonceStart, nonceLen,
+				authData, authDataStart, authDataLen,
+				authTag, authTagStart, authTagLen);
+	}
+
+	@Override
+	public ICryptoOperation initECSignWithSHA256DigestOperation(byte[] privKeyBuf, short privKeyStart, short privKeyLength, byte[] pubModBuf, short pubModStart, short pubModLength) {
+
+		KMOperation signer = kmSEProvider.initAsymmetricOperation(KMType.SIGN, KMType.EC,  KMType.PADDING_NONE , KMType.SHA2_256,
+				privKeyBuf, privKeyStart, privKeyLength, //Private key
+				pubModBuf, pubModStart, pubModLength); //Public key
+
+		return new CryptoOperationImpl(signer);
+	}
 }
