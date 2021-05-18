@@ -23,9 +23,9 @@ namespace se_transport {
  * ITransport is an abstract interface with a set of virtual methods that allow communication between the keymaster
  * HAL and the secure element.
  */
-class ITransport {
+class ITransportClient {
     public:
-    virtual ~ITransport(){}
+    virtual ~ITransportClient(){}
 
     /**
      * Opens connection.
@@ -34,7 +34,7 @@ class ITransport {
     /**
      * Send data over communication channel and receives data back from the remote end.
      */
-    virtual bool sendData(const uint8_t* inData, const size_t inLen, std::vector<uint8_t>& output) = 0;
+    virtual bool transmit(const std::vector<uint8_t> inData, std::vector<uint8_t>& output) = 0;
     /**
      * Closes the connection.
      */
@@ -51,7 +51,7 @@ class ITransport {
  * OmapiTransport is derived from ITransport. This class gets the OMAPI service binder instance and uses IPC to
  * communicate with OMAPI service. OMAPI inturn communicates with hardware via ISecureElement.
  */
-class OmapiTransport : public ITransport {
+class OmapiTransport : public ITransportClient {
 
 public:
 
@@ -63,7 +63,7 @@ public:
     /**
      * Transmists the data over the opened basic channel and receives the data back.
      */
-    bool sendData(const uint8_t* inData, const size_t inLen, std::vector<uint8_t>& output) override;
+    bool transmit(const std::vector<uint8_t> inData, std::vector<uint8_t>& output) override;
     /**
      * Closes the connection.
      */
@@ -76,7 +76,7 @@ public:
 
 };
 
-class SocketTransport : public ITransport {
+class SocketTransport : public ITransportClient {
 
 public:
     SocketTransport() : mSocket(-1), socketStatus(false) {
@@ -88,7 +88,7 @@ public:
     /**
      * Sends data over socket and receives data back.
      */
-    bool sendData(const uint8_t* inData, const size_t inLen, std::vector<uint8_t>& output) override;
+    bool transmit(const std::vector<uint8_t> inData, std::vector<uint8_t>& output) override;
     /**
      * Closes the connection.
      */

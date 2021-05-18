@@ -30,10 +30,12 @@ enum class Instruction {
      */
     INS_ICS_CREATE_CREDENTIAL =  0x10,
     INS_ICS_GET_ATTESTATION_CERT =  0x11,
-    INS_ICS_PERSONALIZE_ACCESS_CONTROL =  0x12,
-    INS_ICS_PERSONALIZE_NAMESPACE =  0x13,
-    INS_ICS_PERSONALIZE_ATTRIBUTE =  0x14,
-    INS_ICS_SIGN_PERSONALIZED_DATA =  0x15,
+    INS_ICS_START_PERSONALIZATION =  0x12,
+    INS_ICS_ADD_ACCESS_CONTROL_PROFILE =  0x13,
+    INS_ICS_BEGIN_ADD_ENTRY =  0x14,
+    INS_ICS_ADD_ENTRY_VALUE =  0x15,
+    INS_ICS_FINISH_ADDING_ENTRIES =  0x16,
+    INS_ICS_FINISH_GET_CREDENTIAL_DATA =  0x17,
 
     /**
      * Credential Management instructions
@@ -57,8 +59,8 @@ class TransportUtil {
 public:
     TransportUtil(){}
     ~TransportUtil(){}
-    int constructApduMessage(Instruction& ins, std::vector<uint8_t>& inputData, std::vector<uint8_t>& apduOut);
-    int sendData(Instruction ins, std::vector<uint8_t>& inData, std::vector<uint8_t>& response);
+    static int constructApduMessage(Instruction& ins, std::vector<uint8_t>& inputData, uint8_t p1, uint8_t p2, std::vector<uint8_t>& apduOut);
+    static int sendData(Instruction ins, std::vector<uint8_t>& inData, uint8_t p1, uint8_t p2, std::vector<uint8_t>& response);
 };
 
 }
