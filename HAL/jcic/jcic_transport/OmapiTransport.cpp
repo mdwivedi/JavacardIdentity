@@ -20,7 +20,7 @@
 #include <unistd.h> 
 #include <string.h> 
 #include <vector>
-#include "Transport.h"
+#include "TransportClient.h"
 
 #define PORT    8080
 #define IPADDR  "10.9.40.24"
@@ -32,9 +32,8 @@ bool OmapiTransport::openConnection() {
     return true;
 }
 
-bool OmapiTransport::sendData(const uint8_t* inData, const size_t inLen, std::vector<uint8_t>& output) {
-    std::vector<uint8_t> test(inData, inData+inLen);
-    output = std::move(test);
+bool OmapiTransport::transmit(const std::vector<uint8_t> inData, std::vector<uint8_t>& output) {
+    output = std::move(inData);
     return true;
 }
 

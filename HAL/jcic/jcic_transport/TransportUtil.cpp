@@ -16,6 +16,7 @@
  */
  
 #include <vector>
+#include <android-base/logging.h>
 #include <android-base/properties.h>
 #include "Transport.h"
 #include "TransportFactory.h"
@@ -27,16 +28,7 @@
 #define CUTTLEFISH_FINGERPRINT_SS    "aosp_cf_"
 
 #define APDU_CLS 0x80
-#define APDU_P1  0x40
-#define APDU_P2  0x00
 #define APDU_RESP_STATUS_OK 0x9000
-
-#define INS_BEGIN_KM_CMD 0x00
-#define INS_END_KM_PROVISION_CMD 0x20
-#define INS_END_KM_CMD 0x7F
-#define SW_KM_OPR 0UL
-#define SB_KM_OPR 1UL
-#define JAVACARD_KEYMASTER_VERSION 3
 
 namespace se_transport {
 
@@ -63,11 +55,11 @@ static inline std::unique_ptr<se_transport::TransportFactory>& getTransportFacto
     return pTransportFactory;
 }
 
-int TransportUtil::constructApduMessage(Instruction& ins, std::vector<uint8_t>& inputData, std::vector<uint8_t>& apduOut) {
+int TransportUtil::constructApduMessage(Instruction& ins, std::vector<uint8_t>& inputData, uint8_t p1, uint8_t p2, std::vector<uint8_t>& apduOut) {
     apduOut.push_back(static_cast<uint8_t>(APDU_CLS)); //CLS
     apduOut.push_back(static_cast<uint8_t>(ins)); //INS
-    apduOut.push_back(static_cast<uint8_t>(APDU_P1)); //P1
-    apduOut.push_back(static_cast<uint8_t>(APDU_P2)); //P2
+    apduOut.push_back(static_cast<uint8_t>(p1)); //P1
+    apduOut.push_back(static_cast<uint8_t>(p2)); //P2
 
     if(USHRT_MAX >= inputData.size()) {
         // Send extended length APDU always as response size is not known to HAL.
@@ -93,23 +85,26 @@ int TransportUtil::constructApduMessage(Instruction& ins, std::vector<uint8_t>& 
 }
 
 uint16_t getStatus(std::vector<uint8_t>& inputData) {
+    LOG(ERROR) << "Status S1=" << std::hex << (inputData.at(inputData.size()-2) << 8) << " S2=" << std::hex << (inputData.at(inputData.size()-1));
     //Last two bytes are the status SW0SW1
-    return (inputData.at(inputData.size()-2) << 8) | (inputData.at(inputData.size()-1));
+    return ((inputData.at(inputData.size()-2) << 8) & 0xFF00) | ((inputData.at(inputData.size()-1)) & 0xFF);
 }
 
-int TransportUtil::sendData(Instruction ins, std::vector<uint8_t>& inData, std::vector<uint8_t>& response) {
+int TransportUtil::sendData(Instruction ins, std::vector<uint8_t>& inData, uint8_t p1, uint8_t p2, std::vector<uint8_t>& response) {
     int ret = -1;
     std::vector<uint8_t> apdu;
 
-    ret = constructApduMessage(ins, inData, apdu);
+    ret = constructApduMessage(ins, inData, p1, p2, apdu);
     if(ret != 0) return ret;
 
     if(!getTransportFactoryInstance()->sendData(apdu.data(), apdu.size(), response)) {
+        LOG(ERROR) << "TransportUtil sendData() failed to send data.";
         return -1;
     }
 
     // Response size should be greater than 2. Cbor output data followed by two bytes of APDU status.
     if((response.size() <= 2) || (getStatus(response) != APDU_RESP_STATUS_OK)) {
+        LOG(ERROR) << "TransportUtil sendData() failed status.";
         return -1;
     }
     return 0;//success

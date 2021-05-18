@@ -76,7 +76,7 @@ cc_binary {
         "android.hardware.keymaster-V3-ndk_platform",
         "android.hardware.identity-jc-hal-common",
         "android.hardware.identity-libeic-library",
-        "libjc_transport",
+        "libjcic_transport",
     ],
     srcs: [
         "service.cpp",
@@ -88,24 +88,28 @@ cc_binary {
 }
 
 cc_library {
-    name: "libjc_transport",
+    name: "libjcic_transport",
     host_supported: true,
     vendor_available: true,
     vndk: {
         enabled: true,
     },
-
+    export_include_dirs: [
+        "jcic_transport",
+    ],
     srcs: [
-        "SocketTransport.cpp",
-        "OmapiTransport.cpp",
-        "TransportUtil.cpp",
+        "jcic_transport/APDU.cpp",
+        "jcic_transport/AppletConnection.cpp",
+        "jcic_transport/TransportFactory.cpp",
+        "jcic_transport/SocketTransport.cpp",
+        "jcic_transport/OmapiTransport.cpp",
     ],
     shared_libs: [
         "libbinder",
         "libbase",
-        "liblog",
     ],
 }
+
 
 prebuilt_etc {
     name: "android.hardware.jc_identity_credential.xml",

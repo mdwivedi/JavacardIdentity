@@ -33,7 +33,7 @@ using ::android::hardware::identity::JCSecureHardwareProxyFactory;
 using ::android::hardware::identity::SecureHardwareProxyFactory;
 
 int main(int /*argc*/, char* argv[]) {
-    InitLogging(argv, StderrLogger);
+    //InitLogging(argv, StderrLogger);
 
     sp<SecureHardwareProxyFactory> hwProxyFactory = new JCSecureHardwareProxyFactory();
 
