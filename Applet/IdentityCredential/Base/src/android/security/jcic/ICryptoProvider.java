@@ -28,42 +28,31 @@ public interface ICryptoProvider {
 	      short pubModMaxLength,
 	      short[] lengths);
 
-	  /**
-	   * This creates a persistent operation for signing, verify, encryption and decryption using RSA
-	   * and EC algorithms when keymaster hal's beginOperation function is executed. For RSA the public
-	   * exponent is always 0x0100101. For EC the curve is always p256. The KMOperation instance can be
-	   * reclaimed by the seProvider when KMOperation is finished or aborted. It throws CryptoException
-	   * if algorithm is not supported.
-	   *
-	   * @param purpose is KMType.ENCRYPT or KMType.DECRYPT for RSA. It will be * KMType.SIGN and
-	   * KMType.VERIFY for RSA and EC algorithms.
-	   * @param alg is KMType.RSA or KMType.EC algorithms.
-	   * @param padding is KMType.PADDING_NONE or KMType.RSA_OAEP, KMType.RSA_PKCS1_1_5_ENCRYPT,
-	   * KMType.RSA_PKCS1_1_5_SIGN or KMType.RSA_PSS.
-	   * @param digest is KMType.DIGEST_NONE or KMType.SHA2_256.
-	   * @param privKeyBuf is the private key in case of EC or private key exponent is case of RSA.
-	   * @param privKeyStart is the start of the private key.
-	   * @param privKeyLength is the length of the private key.
-	   * @param pubModBuf is the modulus (in case of RSA) or public key (in case of EC).
-	   * @param pubModStart is the start of the modulus.
-	   * @param pubModLength is the length of the modulus.
-	   * @return ICryptoOperation instance that can be executed.
-	   */
-	  ICryptoOperation initECSignWithNoDigestOperation(
+
+	short ecSignWithNoDigest(
 	      byte[] privKeyBuf,
 	      short privKeyStart,
 	      short privKeyLength,
-	      byte[] pubModBuf,
-	      short pubModStart,
-	      short pubModLength);
+	      byte[] data,
+		  short dataStart,
+		  short dataLength,
+	      byte[] outSign,
+		  short outSignStart);
 
-	ICryptoOperation initECSignWithSHA256DigestOperation(
+	short ecSignWithSHA256Digest(
 			byte[] privKeyBuf,
 			short privKeyStart,
 			short privKeyLength,
-			byte[] pubModBuf,
-			short pubModStart,
-			short pubModLength);
+			byte[] data,
+			short dataStart,
+			short dataLength,
+			byte[] outSign,
+			short outSignStart);
+
+	boolean ecVerifyWithNoDigest(
+			byte[] pubModBuf, short pubModStart, short pubModLength,
+			byte[] data, short dataStart, short dataLength,
+			byte[] signBuf, short signStart, short signLength);
 
 	  /**
 	   * This is a oneshot operation that performs encryption operation using AES GCM algorithm. It
@@ -150,4 +139,12 @@ public interface ICryptoProvider {
 			short authTagStart,
 			short authTagLen);
 
+	short createECDHSecret(byte[] privKey, short privKeyOffset, short privKeyLen,
+						   byte[] pubKey, short pubKeyOffset, short pubKeyLen,
+						   byte[] outSecret, short outSecretOffset);
+
+	short hkdf(byte[] sharedSecret, short sharedSecretOffset, short sharedSecretLen,
+			   byte[] salt, short saltOffset, short saltLen,
+			   byte[] info, short infoOffset, short infoLen,
+			   byte[] outDerivedKey, short outDerivedKeyOffset, short expectedDerivedKeyLen);
 }

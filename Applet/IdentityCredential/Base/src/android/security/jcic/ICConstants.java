@@ -15,6 +15,8 @@ interface ICConstants {
     byte STATUS_CURRENT_NAMESPACE_NUM_PROCESSED = 2;
     byte STATUS_WORDS = 3;
 
+    byte COSE_SIGN_ALG = (byte)0xF9; //-7
+
     //Signature1
     byte[] STR_SIGNATURE1 = new byte[] {(byte)0x53, (byte)0x69, (byte)0x67, (byte)0x6E, (byte)0x61,
             (byte)0x74, (byte)0x75, (byte)0x72, (byte)0x65, (byte)0x31};
@@ -63,10 +65,24 @@ interface ICConstants {
             (byte) 0x72, (byte) 0x6f, (byte) 0x66, (byte) 0x69, (byte) 0x6c,
             (byte) 0x65, (byte) 0x73};
 
-    byte[] COSE_ENCODED_PROTECTED_HEADERS = {(byte) 0xa1, (byte)0x01, (byte)0x26};
+    byte[] COSE_ENCODED_PROTECTED_HEADERS_ECDSA = {(byte) 0xa1, (byte)0x01, (byte)0x26};
+    byte[] COSE_ENCODED_PROTECTED_HEADERS_HMAC = {(byte) 0xa1, (byte)0x01, (byte)0x05};
 
     //ProofOfBinding
     byte[] STR_PROOF_OF_BINDING = {(byte) 0x50, (byte) 0x72, (byte) 0x6f, (byte) 0x6f, (byte) 0x66, (byte) 0x4f, (byte) 0x66, (byte) 0x42, (byte) 0x69, (byte) 0x6e, (byte) 0x64, (byte) 0x69, (byte) 0x6e, (byte) 0x67};
+
+    //ReaderAuthentication
+    byte[] STR_READER_AUTHENTICATION = {(byte) 0x52, (byte) 0x65, (byte) 0x61, (byte) 0x64, (byte) 0x65, (byte) 0x72,
+                                        (byte) 0x41, (byte) 0x75, (byte) 0x74, (byte) 0x68, (byte) 0x65, (byte) 0x6e,
+                                        (byte) 0x74, (byte) 0x69, (byte) 0x63, (byte) 0x61, (byte) 0x74, (byte) 0x69,
+                                        (byte) 0x6f, (byte) 0x6e};
+
+    byte CBOR_SEMANTIC_TAG_ENCODED_CBOR = (byte)24;
+
+    byte[] EMAC_KEY_INFO = {'E', 'M', 'a', 'c', 'K', 'e', 'y'};
+    byte[] MAC0 = {'M', 'A', 'C', '0'};
+    //DeviceAuthentication
+    byte[] STR_DEVICE_AUTHENTICATION = {'D', 'e', 'v', 'i', 'c', 'e', 'A', 'u', 't', 'h', 'e', 'n', 't', 'i', 'c', 'a', 't', 'i', 'o', 'n'};
 
     byte[] X509_CERT_BASE = {(byte)0x30, (byte)0x82, (byte)0x01, (byte)0x40, (byte)0x30, (byte)0x82, (byte)0x01, (byte)0x3C, (byte)0xA0, (byte)0x03, (byte)0x02, (byte)0x01, (byte)0x02, (byte)0x02, (byte)0x01, (byte)0x01,
             (byte)0x30, (byte)0x0A, (byte)0x06, (byte)0x08, (byte)0x2A, (byte)0x86, (byte)0x48, (byte)0xCE, (byte)0x3D, (byte)0x04, (byte)0x03, (byte)0x02, (byte)0x30, (byte)0x2A, (byte)0x31, (byte)0x28,
