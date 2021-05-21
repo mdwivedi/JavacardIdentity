@@ -36,7 +36,6 @@ ndk::ScopedAStatus IdentityCredentialStore::getHardwareInformation(
                 IIdentityCredentialStore::STATUS_FAILED,
                 "Error getting HardwareInformation"));
     }
-    kGcmChunkSize = hw.dataChunkSize;
     LOG(INFO) << "HardwareInfo credentialStoreName :" << hw.credentialStoreName;
     LOG(INFO) << "HardwareInfo credentialStoreAuthorName :" << hw.credentialStoreAuthorName;
     LOG(INFO) << "HardwareInfo dataChunkSize :" << hw.dataChunkSize;
