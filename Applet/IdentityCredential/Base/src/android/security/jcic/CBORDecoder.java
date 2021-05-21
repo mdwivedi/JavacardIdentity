@@ -225,7 +225,7 @@ public class CBORDecoder extends CBORBase{
         if(length > (short) outBuffer.length || (short)(length + getCurrentOffset()) > getBufferLength())
             ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
         
-        length = Util.arrayCopyNonAtomic(getBuffer(), getCurrentOffset(), outBuffer, outOffset, length);
+        length = (short) (Util.arrayCopyNonAtomic(getBuffer(), getCurrentOffset(), outBuffer, outOffset, length) - outOffset);
         increaseOffset(length);
         
         return length;

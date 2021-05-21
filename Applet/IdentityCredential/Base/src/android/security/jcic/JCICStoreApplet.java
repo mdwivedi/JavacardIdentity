@@ -35,7 +35,7 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 
     private final APDUManager mAPDUManager;
 
-    public JCICStoreApplet(com.android.javacard.keymaster.KMSEProvider cryptoProvider) {
+    public JCICStoreApplet(ICryptoProvider cryptoProvider) {
         mCBORDecoder = new CBORDecoder();
         
         mCBOREncoder = new CBOREncoder();
@@ -87,8 +87,8 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 	            case ISO7816.INS_ICS_GET_HARDWARE_INFO:
 	                processGetHardwareInfo();
 	                break;
-	            case ISO7816.INS_ICS_CREATE_CREDENTIAL:
-	            case ISO7816.INS_ICS_GET_ATTESTATION_CERT:
+	            case ISO7816.INS_ICS_PROVISIONING_INIT:
+	            case ISO7816.INS_ICS_CREATE_CREDENTIAL_KEY:
 	            case ISO7816.INS_ICS_START_PERSONALIZATION:
 	            case ISO7816.INS_ICS_ADD_ACCESS_CONTROL_PROFILE:
 	            case ISO7816.INS_ICS_BEGIN_ADD_ENTRY:
@@ -97,6 +97,24 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 	            case ISO7816.INS_ICS_FINISH_GET_CREDENTIAL_DATA:
 	            	mProvisioning.processAPDU();
 	            	break;
+                case ISO7816.INS_ICS_PRESENTATION_INIT:
+                case ISO7816.INS_ICS_CREATE_EPHEMERAL_KEY_PAIR:
+                case ISO7816.INS_ICS_CREATE_AUTH_CHALLENGE:
+                case ISO7816.INS_ICS_START_RETRIEVAL:
+                case ISO7816.INS_ICS_SET_AUTH_TOKEN:
+                case ISO7816.INS_ICS_PUSH_READER_CERT:
+                case ISO7816.INS_ICS_VALIDATE_ACCESS_CONTROL_PROFILES:
+                case ISO7816.INS_ICS_VALIDATE_REQUEST_MESSAGE:
+                case ISO7816.INS_ICS_CAL_MAC_KEY:
+                case ISO7816.INS_ICS_START_RETRIEVE_ENTRY_VALUE:
+                case ISO7816.INS_ICS_RETRIEVE_ENTRY_VALUE:
+                case ISO7816.INS_ICS_FINISH_RETRIEVAL:
+                case ISO7816.INS_ICS_GENERATE_SIGNING_KEY_PAIR:
+                case ISO7816.INS_ICS_PROVE_OWNERSHIP:
+                case ISO7816.INS_ICS_DELETE_CREDENTIAL:
+                case ISO7816.INS_ICS_UPDATE_CREDENTIAL:
+                    mPresentation.processAPDU();
+                    break;
 	            case ISO7816.INS_ICS_TEST_CBOR:
 	                //processTestCBOR();
 	                break;
@@ -181,6 +199,8 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
         final byte[] outBuffer = mAPDUManager.getSendBuffer();
 
         mCBOREncoder.init(outBuffer, (short)0, le);
+        mCBOREncoder.startArray((short)2);
+        mCBOREncoder.encodeUInt8((byte)0);//Success
         mCBOREncoder.startArray((short)5);
         mCBOREncoder.encodeTextString(STR_CREDENTIAL_SOTRE_NAME, (short) 0, (short)STR_CREDENTIAL_SOTRE_NAME.length);
         mCBOREncoder.encodeTextString(STR_CREDENTIAL_SOTRE_AUTHIR_NAME, (short) 0, (short)STR_CREDENTIAL_SOTRE_AUTHIR_NAME.length);
