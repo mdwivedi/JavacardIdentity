@@ -721,6 +721,50 @@ bool JCSecureHardwarePresentationProxy::pushReaderCert(const vector<uint8_t>& ce
 bool JCSecureHardwarePresentationProxy::validateRequestMessage(
         const vector<uint8_t>& sessionTranscript, const vector<uint8_t>& requestMessage,
         int coseSignAlg, const vector<uint8_t>& readerSignatureOfToBeSigned) {
+    LOG(INFO) << "JCSecureHardwarePresentationProxy validateRequestMessage called";
+#ifdef ENABLE_JAVA_CARD_PRESENTATION
+	vector<uint8_t> readerSignatureOfTBSDer;
+	if(!android::hardware::identity::support::ecdsaSignatureCoseToDer(readerSignatureOfToBeSigned, readerSignatureOfTBSDer)) {
+		return false;
+	}
+    cppbor::Array pArray;
+    pArray.add(sessionTranscript)
+		.add(requestMessage)
+		.add(coseSignAlg)
+		.add(readerSignatureOfTBSDer);
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_VALIDATE_REQUEST_MESSAGE, 0, 0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+    
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return false;
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_VALIDATE_REQUEST_MESSAGE response is not valid CBOR: " << message;
+        return false;
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 1) {
+        LOG(ERROR) << "INS_ICS_VALIDATE_REQUEST_MESSAGE response is not an array with one element";
+        return false;
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_VALIDATE_REQUEST_MESSAGE response is not success";
+        return false;
+    }
+    
+    return true;
+#else
     return eicPresentationValidateRequestMessage(
             &ctx_, sessionTranscript.data(), sessionTranscript.size(), requestMessage.data(),
             requestMessage.size(), coseSignAlg, readerSignatureOfToBeSigned.data(),
@@ -743,6 +787,47 @@ optional<bool> JCSecureHardwarePresentationProxy::validateAccessControlProfile(
         int id, const vector<uint8_t>& readerCertificate, bool userAuthenticationRequired,
         int timeoutMillis, uint64_t secureUserId, const vector<uint8_t>& mac) {
     bool accessGranted = false;
+#ifdef ENABLE_JAVA_CARD_PRESENTATION
+    cppbor::Array pArray;
+    pArray.add(id)
+        .add(userAuthenticationRequired)
+        .add(timeoutMillis)
+        .add(secureUserId)
+        .add(readerCertificate)
+        .add(mac);
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_VALIDATE_ACCESS_CONTROL_PROFILES, 0, 0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+    
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return {};
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_VALIDATE_ACCESS_CONTROL_PROFILES response is not valid CBOR: " << message;
+        return {};
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 2) {
+        LOG(ERROR) << "INS_ICS_VALIDATE_ACCESS_CONTROL_PROFILES response is not an array with two elements";
+        return {};
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_VALIDATE_ACCESS_CONTROL_PROFILES response is not success";
+        return {};
+    }
+    
+    return true;
+#else
     if (!eicPresentationValidateAccessControlProfile(&ctx_, id, readerCertificate.data(),
                                                      readerCertificate.size(),
                                                      userAuthenticationRequired, timeoutMillis,
@@ -764,6 +849,47 @@ bool JCSecureHardwarePresentationProxy::calcMacKey(
         eicDebug("Unexpected size %zd of signingKeyBlob, expected 60", signingKeyBlob.size());
         return false;
     }
+#ifdef ENABLE_JAVA_CARD_PRESENTATION
+    cppbor::Array pArray;
+    pArray.add(sessionTranscript)
+        .add(readerEphemeralPublicKey)
+        .add(signingKeyBlob)
+        .add(docType)
+        .add(numNamespacesWithValues)
+        .add(expectedProofOfProvisioningSize);
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_CAL_MAC_KEY, 0, 0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+    
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return false;
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_CAL_MAC_KEY response is not valid CBOR: " << message;
+        return false;
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 1) {
+        LOG(ERROR) << "INS_ICS_CAL_MAC_KEY response is not an array with one element";
+        return false;
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_CAL_MAC_KEY response is not success";
+        return false;
+    }
+    
+    return true;
+#else
     return eicPresentationCalcMacKey(&ctx_, sessionTranscript.data(), sessionTranscript.size(),
                                      readerEphemeralPublicKey.data(), signingKeyBlob.data(),
                                      docType.c_str(), numNamespacesWithValues,
@@ -835,6 +961,64 @@ optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::proveOwnership(
         const string& docType, bool testCredential, const vector<uint8_t>& challenge,
         size_t proofOfOwnershipCborSize) {
     vector<uint8_t> signatureOfToBeSigned(EIC_ECDSA_P256_SIGNATURE_SIZE);
+#ifdef ENABLE_JAVA_CARD_PRESENTATION
+    cppbor::Array pArray;
+    pArray.add(docType)
+        .add(testCredential)
+        .add(challenge)
+        .add(proofOfOwnershipCborSize);
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_PROVE_OWNERSHIP, 0, 0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return {};
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_PROVE_OWNERSHIP response is not valid CBOR: " << message;
+        return {};
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 2) {
+        LOG(ERROR) << "INS_ICS_PROVE_OWNERSHIP response is not an array with two elements";
+        return {};
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_PROVE_OWNERSHIP response is not success";
+        return {};
+    }
+
+    const cppbor::Array* returnArray = (*arrayItem)[1]->asArray();
+    const cppbor::Bstr* signatureOfToBeSignedBstr = (*returnArray)[0]->asBstr();
+    const vector<uint8_t> derSignature = signatureOfToBeSignedBstr->value();
+
+    ECDSA_SIG* sig;
+    const unsigned char* p = derSignature.data();
+    sig = d2i_ECDSA_SIG(nullptr, &p, derSignature.size());
+    if (sig == nullptr) {
+        LOG(ERROR) << "INS_ICS_FINISH_ADDING_ENTRIES Error decoding DER signature";
+        return {};
+    }
+
+    if (BN_bn2binpad(sig->r, signatureOfToBeSigned.data(), 32) != 32) {
+        LOG(ERROR) << "INS_ICS_FINISH_ADDING_ENTRIES Error encoding r";
+        return {};
+    }
+    if (BN_bn2binpad(sig->s, signatureOfToBeSigned.data() + 32, 32) != 32) {
+        LOG(ERROR) << "INS_ICS_FINISH_ADDING_ENTRIES Error encoding s";
+        return {};
+    }
+#else
     if (!eicPresentationProveOwnership(&ctx_, docType.c_str(), testCredential, challenge.data(),
                                        challenge.size(), proofOfOwnershipCborSize,
                                        signatureOfToBeSigned.data())) {

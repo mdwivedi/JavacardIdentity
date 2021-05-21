@@ -547,7 +547,7 @@ ndk::ScopedAStatus IdentityCredential::startRetrieval(
                     IIdentityCredentialStore::STATUS_FAILED,
                     "Reader public key is not in expected format"));
         }
-        vector<uint8_t> pubKeyP256(readerPublicKey_.begin() + 1, readerPublicKey_.end());
+        vector<uint8_t> pubKeyP256(readerPublicKey_.begin(), readerPublicKey_.end());
         if (!hwProxy_->calcMacKey(sessionTranscript_, pubKeyP256, signingKeyBlob, docType_,
                                   numNamespacesWithValues, expectedDeviceNameSpacesSize_)) {
             return ndk::ScopedAStatus(AStatus_fromServiceSpecificErrorWithMessage(
