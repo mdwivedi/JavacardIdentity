@@ -171,6 +171,8 @@ final class JCICPresentation {
 											outBuffer, le, tempBuffer);
 				break;
 			case ISO7816.INS_ICS_PROVE_OWNERSHIP:
+				outGoingLength = processProveOwnership(receiveBuffer, receivingDataOffset, receivingDataLength,
+						outBuffer, le, tempBuffer);
 				break;
 			case ISO7816.INS_ICS_DELETE_CREDENTIAL:
 				break;
@@ -1017,4 +1019,75 @@ final class JCICPresentation {
 		mCBOREncoder.encodeUInt8((byte)0); //Success
 		return mCBOREncoder.getCurrentOffset();
 	}
+
+	private short processProveOwnership(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
+										byte[] outBuffer, short le, byte[] tempBuffer) {
+		//If P1P2 other than 0000 throw exception
+		if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
+			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+		}
+
+		mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
+		mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+		short docTypeOffset = (short)0;
+		short docTypeLen = mCBORDecoder.readByteString(tempBuffer, docTypeOffset);
+		boolean isTestCredential = mCBORDecoder.readBoolean();
+		short challengeOffset = (short)(docTypeOffset + docTypeLen);
+		short challengeLen = mCBORDecoder.readByteString(tempBuffer, challengeOffset);
+		short proofOfOwnershipChorSizeOffset = (short)(challengeOffset + challengeLen);
+		short proofOfOwnershipCborSizeLen = ICUtil.readUint(mCBORDecoder, tempBuffer, proofOfOwnershipChorSizeOffset);
+
+		short coseTBSOffset = (short) (proofOfOwnershipChorSizeOffset + proofOfOwnershipCborSizeLen);
+		mCBOREncoder.init(tempBuffer, coseTBSOffset, CryptoManager.TEMP_BUFFER_SIZE);
+
+		// What we're going to sign is the COSE ToBeSigned structure which
+		// looks like the following:
+		//
+		// Sig_structure = [
+		//   context : "Signature" / "Signature1" / "CounterSignature",
+		//   body_protected : empty_or_serialized_map,
+		//   ? sign_protected : empty_or_serialized_map,
+		//   external_aad : bstr,
+		//   payload : bstr
+		//  ]
+		//
+		mCBOREncoder.startArray((short)4);
+		mCBOREncoder.encodeTextString(STR_SIGNATURE1, (short)0, (short)STR_SIGNATURE1.length);
+
+		// The COSE Encoded protected headers is just a single field with
+		// COSE_LABEL_ALG (1) -> COSE_ALG_ECSDA_256 (-7). For simplicitly we just
+		// hard-code the CBOR encoding:
+		mCBOREncoder.encodeByteString(COSE_ENCODED_PROTECTED_HEADERS_ECDSA, (short)0, (short)COSE_ENCODED_PROTECTED_HEADERS_ECDSA.length);
+
+		// We currently don't support Externally Supplied Data (RFC 8152 section 4.3)
+		// so external_aad is the empty bstr
+		mCBOREncoder.encodeByteString(tempBuffer, (short)0, (short)0);
+
+		// For the payload, the _encoded_ form follows here. We handle this by simply
+		// opening a bstr, and then writing the CBOR. This requires us to know the
+		// size of said bstr, ahead of time.
+		mCBOREncoder.startByteString(tempBuffer, proofOfOwnershipChorSizeOffset, (byte)proofOfOwnershipCborSizeLen);
+
+		// Finally, the CBOR that we're actually signing.
+		mCBOREncoder.startArray((short)4);
+		mCBOREncoder.encodeTextString(STR_PROOF_OF_OWNERSHIP, (short)0, (short)STR_PROOF_OF_OWNERSHIP.length);
+		mCBOREncoder.encodeTextString(tempBuffer, docTypeOffset, docTypeLen);
+		mCBOREncoder.encodeByteString(tempBuffer, challengeOffset, challengeLen);
+		mCBOREncoder.encodeBoolean(isTestCredential);
+
+		short digestOffset = mCBOREncoder.getCurrentOffset();
+		mDigest.reset();
+		short digestLen = mDigest.doFinal(tempBuffer, coseTBSOffset, (short)(mCBOREncoder.getCurrentOffset() - coseTBSOffset),
+						tempBuffer, digestOffset);
+		short signatureOffset = (short)(digestOffset + digestLen);
+		short signatureLen = mCryptoManager.ecSignWithNoDigest(tempBuffer, digestOffset, tempBuffer, signatureOffset);
+
+		mCBOREncoder.init(outBuffer, (short) 0, le);
+		mCBOREncoder.startArray((short)2);
+		mCBOREncoder.encodeUInt8((byte)0); //Success
+		mCBOREncoder.startArray((short)1);
+		mCBOREncoder.encodeByteString(tempBuffer, signatureOffset, signatureLen);
+		return mCBOREncoder.getCurrentOffset();
+	}
+
 }

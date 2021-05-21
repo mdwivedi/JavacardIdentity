@@ -84,6 +84,8 @@ interface ICConstants {
     //DeviceAuthentication
     byte[] STR_DEVICE_AUTHENTICATION = {'D', 'e', 'v', 'i', 'c', 'e', 'A', 'u', 't', 'h', 'e', 'n', 't', 'i', 'c', 'a', 't', 'i', 'o', 'n'};
 
+    byte[] STR_PROOF_OF_OWNERSHIP = {'P', 'r', 'o', 'o', 'f', 'O', 'f', 'O', 'w', 'n', 'e', 'r', 's', 'h', 'i', 'p'};
+
     byte[] X509_CERT_BASE = {(byte)0x30, (byte)0x82, (byte)0x01, (byte)0x40, (byte)0x30, (byte)0x82, (byte)0x01, (byte)0x3C, (byte)0xA0, (byte)0x03, (byte)0x02, (byte)0x01, (byte)0x02, (byte)0x02, (byte)0x01, (byte)0x01,
             (byte)0x30, (byte)0x0A, (byte)0x06, (byte)0x08, (byte)0x2A, (byte)0x86, (byte)0x48, (byte)0xCE, (byte)0x3D, (byte)0x04, (byte)0x03, (byte)0x02, (byte)0x30, (byte)0x2A, (byte)0x31, (byte)0x28,
             (byte)0x30, (byte)0x26, (byte)0x06, (byte)0x03, (byte)0x55, (byte)0x04, (byte)0x03, (byte)0x0C, (byte)0x1F, (byte)0x41, (byte)0x6E, (byte)0x64, (byte)0x72, (byte)0x6F, (byte)0x69, (byte)0x64,
