@@ -110,6 +110,7 @@ cc_library {
     ],
 }
 
+
 prebuilt_etc {
     name: "android.hardware.jc_identity_credential.xml",
     sub_dir: "permissions",

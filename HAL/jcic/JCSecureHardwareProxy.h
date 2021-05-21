@@ -81,6 +81,7 @@ class JCSecureHardwareProvisioningProxy : public SecureHardwareProvisioningProxy
     optional<vector<uint8_t>> finishGetCredentialData(const string& docType) override;
 
   protected:
+	bool isTestCredential;
     EicProvisioning ctx_;
     AppletConnection mAppletConnection;
 };
@@ -152,6 +153,7 @@ class JCSecureHardwarePresentationProxy : public SecureHardwarePresentationProxy
 
   protected:
     EicPresentation ctx_;
+    AppletConnection mAppletConnection;
 };
 
 // Factory implementation.

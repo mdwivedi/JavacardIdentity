@@ -66,7 +66,7 @@ public class CBOREncoder extends CBORBase{
      * @return The offset in the buffer where the byte string is supposed to be
      *         copied into.
      */
-    public short startByteString(byte lengthSize, byte[] lenthBuff, short lenthBuffOff) {
+    public short startByteString(byte[] lenthBuff, short lenthBuffOff, byte lengthSize) {
     	byte encodeLengthByte = ENCODED_ONE_BYTE;
     	switch(lengthSize) {
 	    	case 1:
@@ -100,7 +100,7 @@ public class CBOREncoder extends CBORBase{
         encodeValue((byte) (TYPE_TEXT_STRING << 5), length);
         return getCurrentOffset();
     }
-    
+
     /**
      * Encodes the given byte string at the current buffer location.
      * 
@@ -178,7 +178,16 @@ public class CBOREncoder extends CBORBase{
             return writeRawByte(ENCODED_FALSE);            
         }
     }
-    
+
+    public short encodeTag(byte value) {
+        encodeValue((byte) (TYPE_TAG << 5), value);
+        return getCurrentOffset();
+    }
+
+    public short encodeRawData(byte[] value, short offset, short length) {
+        return writeRawByteArray(value, offset, length);
+    }
+
     final private short encodeValue(byte majorType, short value) {      
         if(ICUtil.isLessThanAsUnsignedShort(value, ENCODED_ONE_BYTE)) {
             return writeRawByte((byte) (majorType | value));  
