@@ -95,6 +95,9 @@ public class CryptoManager {
     // Temporary buffer in memory for status information
     //private final short[] mStatusWords;
 
+    //TODO pre-shared key is hardcoded for now but we need to get it through either provisioning or from keymaster
+    private byte[] mPreSharedKey = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
     public CryptoManager(APDUManager apduManager, ICryptoProvider cryptoProvider /*AccessControlManager accessControlManager,*/) {
     	mCryptoProvider = cryptoProvider;
     	
@@ -246,27 +249,21 @@ public class CryptoManager {
         return mCredentialKeyPairLengths[1];
     }
 
-    short ecSignPreSharedHash(byte[] sha256Hash, short hashOffset, byte[] signBuff, short signBuffOffset) {
-    	/* Test data
-    	byte[] privKey = new byte[] {(byte) 0x03, (byte) 0x64, (byte) 0x3d, (byte) 0x30, (byte) 0x2e, (byte) 0xad, (byte) 0xbe, (byte) 0x58, (byte) 0x21, (byte) 0xb7, (byte) 0xad, (byte) 0xa2, (byte) 0x21, (byte) 0x45, (byte) 0xfb, (byte) 0x8b, (byte) 0x35, (byte) 0x0a, (byte) 0x6e, (byte) 0x1c, (byte) 0x2a, (byte) 0x42, (byte) 0x50, (byte) 0x11, (byte) 0x46, (byte) 0x2d, (byte) 0xea, (byte) 0x38, (byte) 0x28, (byte) 0x4c, (byte) 0xfe, (byte) 0x7b};
-    	sha256Hash = new byte[] {(byte) 0x55, (byte) 0xa1, (byte) 0x22, (byte) 0x0f, (byte) 0x97, (byte) 0x4d, (byte) 0x86, (byte) 0xe6, (byte) 0xff, (byte) 0x0c, (byte) 0x5f, (byte) 0x19, (byte) 0x79, (byte) 0xe7, (byte) 0x7d, (byte) 0xef, (byte) 0x71, (byte) 0xdf, (byte) 0xbd, (byte) 0x92, (byte) 0xa7, (byte) 0x21, (byte) 0xe3, (byte) 0x0d, (byte) 0x8f, (byte) 0x34, (byte) 0x8e, (byte) 0xfd, (byte) 0xa6, (byte) 0xf4, (byte) 0x0f, (byte) 0xe2};
-    	hashOffset = (short) 0;
-    	Util.arrayCopyNonAtomic(privKey, (short) 0, mCredentialKeyPair, (short) 0, EC_KEY_SIZE);
-    	/* Test data finish */
-    	
-    	ICryptoOperation signer = mCryptoProvider.initECSignWithNoDigestOperation(
-    																mCredentialKeyPair, (short)0, mCredentialKeyPairLengths[0], //Private key
-    																mCredentialKeyPair, EC_KEY_SIZE, mCredentialKeyPairLengths[1]); //Public key
-    	
-    	return signer.sign(sha256Hash, hashOffset, SHA256_DIGEST_SIZE, signBuff, signBuffOffset);
+    short ecSignWithNoDigest(byte[] sha256Hash, short hashOffset, byte[] signBuff, short signBuffOffset) {
+    	return mCryptoProvider.ecSignWithNoDigest(mCredentialKeyPair, (short)0, mCredentialKeyPairLengths[0],//Private key
+                sha256Hash, hashOffset, SHA256_DIGEST_SIZE, signBuff, signBuffOffset);
     }
 
-    short ecSign(byte[] data, short dataOffset, short dataLen, byte[] signBuff, short signBuffOffset) {
-        ICryptoOperation signer = mCryptoProvider.initECSignWithSHA256DigestOperation(
-                mCredentialKeyPair, (short)0, mCredentialKeyPairLengths[0], //Private key
-                mCredentialKeyPair, EC_KEY_SIZE, mCredentialKeyPairLengths[1]); //Public key
+    short ecSignWithSHA256Digest(byte[] data, short dataOffset, short dataLen, byte[] signBuff, short signBuffOffset) {
+        return mCryptoProvider.ecSignWithSHA256Digest(
+                mCredentialKeyPair, (short)0, mCredentialKeyPairLengths[0],//Private key
+                data, dataOffset, dataLen, signBuff, signBuffOffset);
+    }
 
-        return signer.sign(data, dataOffset, dataLen, signBuff, signBuffOffset);
+    boolean ecVerifyWithNoDigest(byte[] pubKey, short pubKeyOffset, short pubKeyLen,
+                                 byte[] data, short dataOffset, short dataLen,
+                                 byte[] signBuff, short signBuffOffset, short signLength) {
+        return mCryptoProvider.ecVerifyWithNoDigest(pubKey, pubKeyOffset, pubKeyLen, data, dataOffset, dataLen, signBuff, signBuffOffset, signLength);
     }
 
     void setStatusFlag(byte flag, boolean isSet) {
@@ -332,7 +329,20 @@ public class CryptoManager {
     			outNonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
 		*/
     }
-    
+
+    public boolean aesGCMDecrypt(byte[] encData, short encDataOffset, short encDataLen,
+                               byte[] outData, short outDataOffset,
+                               byte[] authData, short authDataOffset, short authDataLen,
+                               byte[] nonceAndTag, short outNonceAndTagOff) {
+
+        return mCryptoProvider.aesGCMDecrypt(mCredentialStorageKey, (short)0, (short)mCredentialStorageKey.length,
+                encData, encDataOffset, encDataLen,
+                outData, outDataOffset,
+                nonceAndTag, outNonceAndTagOff, AES_GCM_IV_SIZE,
+                authData, authDataOffset, authDataLen,
+                nonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
+    }
+
     short entryptCredentialData(boolean isTestCredential,
     		byte[] data, short dataOffset, short dataLen,
     		byte[] outData, short outDataOffset,
@@ -381,5 +391,35 @@ public class CryptoManager {
                     authData, authDataOffset, authDataLen,
                     authTag, authTagOffset, authTagLen);
         }
+    }
+
+    public short createECDHSecret(byte[] privKey, short privKeyOffset, short privKeyLen,
+                                  byte[] pubKey, short pubKeyOffset, short pubKeyLen,
+                                  byte[] outSecret, short outSecretOffset) {
+        return mCryptoProvider.createECDHSecret(privKey, privKeyOffset, privKeyLen,
+                pubKey, pubKeyOffset, pubKeyLen,
+                outSecret, outSecretOffset);
+    }
+
+    public short hkdf(byte[] sharedSecret, short sharedSecretOffset, short sharedSecretLen,
+                      byte[] salt, short saltOffset, short saltLen,
+                      byte[] info, short infoOffset, short infoLen,
+                      byte[] outDerivedKey, short outDerivedKeyOffset, short expectedKeySize) {
+        return mCryptoProvider.hkdf(sharedSecret, sharedSecretOffset, sharedSecretLen,
+                                    salt, saltOffset, saltLen,
+                                    info, infoOffset, infoLen,
+                                    outDerivedKey, outDerivedKeyOffset, expectedKeySize);
+    }
+
+    public byte[] getPresharedHmacKey() {
+        return mPreSharedKey;
+    }
+
+    public boolean hmacVerify(byte[] key, short keyOffset, short keyLen,
+                              byte[] data, short dataOffset, short dataLen,
+                              byte[] mac, short macOffset, short macLen) {
+        return mCryptoProvider.hmacVerify(key, keyOffset, keyLen,
+                                    data, dataOffset, dataLen,
+                                    mac, macOffset, macLen);
     }
 }
