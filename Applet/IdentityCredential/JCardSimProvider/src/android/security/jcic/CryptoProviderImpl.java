@@ -197,4 +197,11 @@ public class CryptoProviderImpl implements ICryptoProvider{
 		key.setKey(secretBuffer, secretOff, secretLength);
 		return key;
 	}
+
+	@Override
+	public boolean hmacVerify(byte[] key, short keyOffset, short keyLen, byte[] data, short dataOffset, short dataLen, byte[] mac, short macOffset, short macLen) {
+		HMACKey hmacKey = createHMACKey(key, keyOffset, keyLen);
+		mHMACSignature.init(hmacKey, Signature.MODE_VERIFY);
+		return mHMACSignature.verify(data, dataOffset, dataLen, mac, macOffset, macLen);
+	}
 }

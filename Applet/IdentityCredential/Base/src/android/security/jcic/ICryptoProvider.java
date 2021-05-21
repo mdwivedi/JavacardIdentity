@@ -147,4 +147,8 @@ public interface ICryptoProvider {
 			   byte[] salt, short saltOffset, short saltLen,
 			   byte[] info, short infoOffset, short infoLen,
 			   byte[] outDerivedKey, short outDerivedKeyOffset, short expectedDerivedKeyLen);
+
+	boolean hmacVerify(byte[] key, short keyOffset, short keyLen,
+					   byte[] data, short dataOffset, short dataLen,
+					   byte[] mac, short macOffset, short macLen);
 }

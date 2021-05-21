@@ -526,7 +526,7 @@ final class JCICPresentation {
 			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
 		}
 
-		if(!validateAuthToken(receiveBuffer, receivingDataOffset, receivingDataLength, tempBuffer)) {
+		if(!validateAuthToken(receiveBuffer, receivingDataOffset, receivingDataLength, tempBuffer, (short)0)) {
 			ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
 		}
 
@@ -552,15 +552,41 @@ final class JCICPresentation {
 	}
 
 	private boolean validateAuthToken(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
-									  byte[] tempBuffer) {
+									  byte[] tempBuffer, short tempBufferOffset) {
 		// Here's where we would validate the passed-in |authToken| to assure ourselves
 		// that it comes from the e.g. biometric hardware and wasn't made up by an attacker.
 		//
 		// However this involves calculating the MAC which requires access to the to
 		// a pre-shared key which we don't have...
 		//
-		//TODO get the detail from Chirag about how to implement from Keymaster mint
-		return false;
+		//TODO this need to revisit, currently hardcoded pre-shared key is used which need to get from provision or keymaster.
+
+		mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
+		mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+		short totalLen = 0;
+		byte intSize = mCBORDecoder.getIntegerSize(); //challenge
+		totalLen += ICUtil.readUint(mCBORDecoder, tempBuffer, (short)(tempBufferOffset + totalLen + LONG_SIZE - intSize));
+		intSize = mCBORDecoder.getIntegerSize(); //secureUserId
+		totalLen +=  ICUtil.readUint(mCBORDecoder, tempBuffer, (short)(tempBufferOffset + totalLen + LONG_SIZE - intSize));
+		intSize = mCBORDecoder.getIntegerSize(); //authenticatorId
+		totalLen +=  ICUtil.readUint(mCBORDecoder, tempBuffer, (short)(tempBufferOffset + totalLen + LONG_SIZE - intSize));
+		intSize = mCBORDecoder.getIntegerSize(); //hardwareAuthenticatorType
+		totalLen += ICUtil.readUint(mCBORDecoder, tempBuffer, (short)(tempBufferOffset + totalLen + LONG_SIZE - intSize));
+		intSize = mCBORDecoder.getIntegerSize(); //timeStamp
+		totalLen += ICUtil.readUint(mCBORDecoder, tempBuffer, (short)(tempBufferOffset + totalLen + LONG_SIZE - intSize));
+		short macOffset = totalLen;
+		short macLen = mCBORDecoder.readByteString(tempBuffer, (short)(tempBufferOffset + macOffset));//mac
+
+		// If mac length is zero then token is empty.
+		if (macLen == 1 && tempBuffer[macOffset] == (byte)0) {
+			return false;
+		}
+
+		byte[] preSharedKey = mCryptoManager.getPresharedHmacKey();
+		return mCryptoManager.hmacVerify(
+				preSharedKey, (short)0, (short)preSharedKey.length, //pre-shared key
+				tempBuffer, tempBufferOffset, totalLen, //data
+				tempBuffer, macOffset, macLen); //mac
 	}
 
 	private short processValidateAccessControlProfile(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,

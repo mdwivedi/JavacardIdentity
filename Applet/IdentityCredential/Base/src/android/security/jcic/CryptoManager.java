@@ -95,6 +95,9 @@ public class CryptoManager {
     // Temporary buffer in memory for status information
     //private final short[] mStatusWords;
 
+    //TODO pre-shared key is hardcoded for now but we need to get it through either provisioning or from keymaster
+    private byte[] mPreSharedKey = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
     public CryptoManager(APDUManager apduManager, ICryptoProvider cryptoProvider /*AccessControlManager accessControlManager,*/) {
     	mCryptoProvider = cryptoProvider;
     	
@@ -406,5 +409,17 @@ public class CryptoManager {
                                     salt, saltOffset, saltLen,
                                     info, infoOffset, infoLen,
                                     outDerivedKey, outDerivedKeyOffset, expectedKeySize);
+    }
+
+    public byte[] getPresharedHmacKey() {
+        return mPreSharedKey;
+    }
+
+    public boolean hmacVerify(byte[] key, short keyOffset, short keyLen,
+                              byte[] data, short dataOffset, short dataLen,
+                              byte[] mac, short macOffset, short macLen) {
+        return mCryptoProvider.hmacVerify(key, keyOffset, keyLen,
+                                    data, dataOffset, dataLen,
+                                    mac, macOffset, macLen);
     }
 }
