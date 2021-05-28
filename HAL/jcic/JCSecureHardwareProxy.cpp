@@ -1114,7 +1114,11 @@ optional<bool> JCSecureHardwarePresentationProxy::validateAccessControlProfile(
         return {};
     }
 
-    return true;
+    const cppbor::Array* returnArray = (*arrayItem)[1]->asArray();
+    const cppbor::Simple* accessBool = (*returnArray)[0]->asSimple();
+    accessGranted = accessBool->asBool()->value();
+
+    return accessGranted;
 #else
     if (!eicPresentationValidateAccessControlProfile(&ctx_, id, readerCertificate.data(),
                                                      readerCertificate.size(),
@@ -1225,6 +1229,55 @@ AccessCheckResult JCSecureHardwarePresentationProxy::startRetrieveEntryValue(
         int32_t entrySize, const vector<int32_t>& accessControlProfileIds) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy startRetrieveEntryValue called";
 #ifdef ENABLE_JAVA_CARD_PRESENTATION
+    cppbor::Array cborProfileIDs;
+    for(size_t i = 0; i < accessControlProfileIds.size(); i++) {
+        cborProfileIDs.add(accessControlProfileIds[i]);
+    }
+    cppbor::Array pArray;
+    pArray.add(nameSpace)
+		.add(name)
+		.add(std::move(cborProfileIDs))
+		.add(entrySize)
+        .add(newNamespaceNumEntries);
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_START_RETRIEVE_ENTRY_VALUE, 0, 0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return AccessCheckResult::kFailed;
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_START_RETRIEVE_ENTRY_VALUE response is not valid CBOR: " << message;
+        return AccessCheckResult::kFailed;
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 1) {
+        LOG(ERROR) << "INS_ICS_START_RETRIEVE_ENTRY_VALUE response is not an array with one element";
+        return AccessCheckResult::kFailed;
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    LOG(INFO) << "JCSecureHardwarePresentationProxy startRetrieveEntryValue " << nameSpace << ":" << name << " result " << successCode->value();
+    switch (successCode->value()) {
+        case 0:
+            return AccessCheckResult::kOk;
+        case 1:
+            return AccessCheckResult::kFailed;
+        case 2:
+            return AccessCheckResult::kNoAccessControlProfiles;
+        case 3:
+            return AccessCheckResult::kUserAuthenticationFailed;
+        case 4:
+            return AccessCheckResult::kReaderAuthenticationFailed;
+    }
 #else
     uint8_t scratchSpace[512];
     EicAccessCheckResult result = eicPresentationStartRetrieveEntryValue(
@@ -1253,7 +1306,57 @@ optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::retrieveEntryValue(
         const vector<int32_t>& accessControlProfileIds) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy retrieveEntryValue called";
 #ifdef ENABLE_JAVA_CARD_PRESENTATION
-    return {};
+    cppbor::Array cborProfileIDs;
+    for(size_t i = 0; i < accessControlProfileIds.size(); i++) {
+        cborProfileIDs.add(accessControlProfileIds[i]);
+    }
+    cppbor::Array additionalDataArray;
+    additionalDataArray.add(nameSpace)
+            .add(name)
+            .add(std::move(cborProfileIDs));
+    cppbor::Array pArray;
+    pArray.add(std::move(additionalDataArray))
+        .add(encryptedContent);
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_RETRIEVE_ENTRY_VALUE, 0, 0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return {};
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_RETRIEVE_ENTRY_VALUE response is not valid CBOR: " << message;
+        return {};
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 2) {
+        LOG(ERROR) << "INS_ICS_RETRIEVE_ENTRY_VALUE response is not an array with two elements";
+        return {};
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_RETRIEVE_ENTRY_VALUE response is not success";
+        return {};
+    }
+
+    const cppbor::Array* returnArray = (*arrayItem)[1]->asArray();
+    const cppbor::Bstr* contentBstr = (*returnArray)[0]->asBstr();
+    const vector<uint8_t> content = contentBstr->value();
+
+    if(content.size() != encryptedContent.size() - 28) {
+        LOG(ERROR) << "INS_ICS_RETRIEVE_ENTRY_VALUE invalid content size - " << content.size();
+        return {};
+    }
+    return content;
 #else
     uint8_t scratchSpace[512];
     vector<uint8_t> content;
@@ -1270,16 +1373,53 @@ optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::retrieveEntryValue(
 
 optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::finishRetrieval() {
     LOG(INFO) << "JCSecureHardwarePresentationProxy finishRetrieval called";
-    vector<uint8_t> mac(32);
 #ifdef ENABLE_JAVA_CARD_PRESENTATION
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_FINISH_RETRIEVAL, 0, 0};
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        mAppletConnection.close();
+        return {};
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_FINISH_RETRIEVAL response is not valid CBOR: " << message;
+        return {};
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 2) {
+        LOG(ERROR) << "INS_ICS_FINISH_RETRIEVAL response is not an array with two elements";
+        return {};
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_FINISH_RETRIEVAL response is not success";
+        return {};
+    }
+
+    const cppbor::Array* returnArray = (*arrayItem)[1]->asArray();
+    const cppbor::Bstr* digestToBeMacedBstr = (*returnArray)[0]->asBstr();
+    const vector<uint8_t> digestToBeMaced = digestToBeMacedBstr->value();
+
+    if(digestToBeMaced.size() != 32) {
+        LOG(ERROR) << "INS_ICS_FINISH_RETRIEVAL invalid mac size - " << digestToBeMaced.size();
+        return {};
+    }
+    return digestToBeMaced;
 #else
+    vector<uint8_t> mac(32);
     size_t macSize = 32;
     if (!eicPresentationFinishRetrieval(&ctx_, mac.data(), &macSize)) {
         return {};
     }
     mac.resize(macSize);
-#endif
     return mac;
+#endif
 }
 
 optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::deleteCredential(
