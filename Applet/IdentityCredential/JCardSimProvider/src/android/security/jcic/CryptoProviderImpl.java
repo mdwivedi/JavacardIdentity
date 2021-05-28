@@ -1,6 +1,8 @@
 package android.security.jcic;
 
 import com.android.javacard.keymaster.*;
+import javacard.framework.ISO7816;
+import javacard.framework.ISOException;
 import javacard.framework.Util;
 import javacard.security.*;
 import javacard.security.KeyPair;
@@ -15,7 +17,8 @@ public class CryptoProviderImpl implements ICryptoProvider{
 	private final Signature mHMACSignature;
 	private final KeyPair mECKeyPair1;
 	private final KeyAgreement mECDHAgreement;
-	private java.security.Signature sunSigner;
+	private java.security.Signature sunSignerNoDigest;
+	private java.security.Signature sunSignerWithSha256;
 	
 	CryptoProviderImpl() {
 		kmSEProvider = new KMJCardSimulator();
@@ -23,9 +26,10 @@ public class CryptoProviderImpl implements ICryptoProvider{
 		mECKeyPair1 = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
 		mECDHAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
 		try {
-			sunSigner = java.security.Signature.getInstance("NONEwithECDSA", "SunEC");
+			sunSignerNoDigest = java.security.Signature.getInstance("NONEwithECDSA", "SunEC");
+			sunSignerWithSha256 = java.security.Signature.getInstance("SHA256withECDSA", "SunEC");
 		} catch (NoSuchAlgorithmException | NoSuchProviderException e) {
-
+			e.printStackTrace();
 		}
 	}
 
@@ -88,6 +92,14 @@ public class CryptoProviderImpl implements ICryptoProvider{
 	public boolean ecVerifyWithNoDigest(byte[] pubKeyBuf, short pubKeyStart, short pubKeyLength,
                                         byte[] data, short dataStart, short dataLength,
                                         byte[] signBuf, short signStart, short signLength) {
+		return ecVerify(sunSignerNoDigest, pubKeyBuf, pubKeyStart, pubKeyLength,
+		data, dataStart, dataLength,
+		signBuf, signStart, signLength);
+	}
+
+	private boolean ecVerify(java.security.Signature signer, byte[] pubKeyBuf, short pubKeyStart, short pubKeyLength,
+							 byte[] data, short dataStart, short dataLength,
+							 byte[] signBuf, short signStart, short signLength) {
 		boolean result;
 		KeyFactory kf;
 		try {
@@ -116,9 +128,9 @@ public class CryptoProviderImpl implements ICryptoProvider{
 			ECPoint point = new ECPoint(bIX, bIY);
 			ECPublicKeySpec pubkeyspec = new ECPublicKeySpec(point, ecParameters);
 			java.security.interfaces.ECPublicKey pubkey = (java.security.interfaces.ECPublicKey) kf.generatePublic(pubkeyspec);
-			sunSigner.initVerify(pubkey);
-			sunSigner.update(data, dataStart, dataLength);
-			result = sunSigner.verify(signBuf, signStart, signLength);
+			signer.initVerify(pubkey);
+			signer.update(data, dataStart, dataLength);
+			result = signer.verify(signBuf, signStart, signLength);
 		} catch(Exception e) {
 			result = false;
 		}
@@ -203,5 +215,43 @@ public class CryptoProviderImpl implements ICryptoProvider{
 		HMACKey hmacKey = createHMACKey(key, keyOffset, keyLen);
 		mHMACSignature.init(hmacKey, Signature.MODE_VERIFY);
 		return mHMACSignature.verify(data, dataOffset, dataLen, mac, macOffset, macLen);
+	}
+
+	@Override
+	public boolean verifyCertByPubKey(byte[] cert, short certOffset, short certLen,
+									  byte[] pubKey, short pubKeyOffset, short pubKeyLen) {
+		if(certLen <= 0 || cert[0] != 0x30) {
+			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+		}
+		short tbsStart = 0;
+		for(short i = (short) (certOffset + 1); i < (short)(certOffset + 5); i++) {
+			if(cert[i] == 0x30) {
+				tbsStart = i;
+				break;
+			}
+		}
+		if(tbsStart == 0) {
+			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+		}
+		short tbsLen;
+		if(cert[tbsStart + 1] == (byte)0x81) {
+			tbsLen = (short)(cert[tbsStart + 2] & 0x00FF);
+			tbsLen += 3;
+		} else if(cert[tbsStart + 1] == (byte)0x82) {
+			tbsLen = Util.getShort(cert, (short) (tbsStart + 2));
+			tbsLen += 4;
+		} else {
+			tbsLen = (short)(cert[tbsStart + 1] & 0x00FF);
+			tbsLen += 2;
+		}
+
+		short signSeqStart = (short)(tbsStart + tbsLen + (byte)12/*OID TAG*/);
+		if(cert[signSeqStart] != 0x03 && cert[(short)(signSeqStart + (byte)2)] != 0x00) {
+			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+		}
+		byte signLen = (byte)(cert[signSeqStart + (byte)1] - (byte)2);//Actual signature Bit string starts after 0x00. signature len expected around 70-72
+		return ecVerify(sunSignerWithSha256, pubKey, pubKeyOffset, pubKeyLen,
+				cert, tbsStart, tbsLen,
+				cert, (short) (certOffset + certLen - signLen), signLen);
 	}
 }

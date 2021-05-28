@@ -21,17 +21,6 @@ public class CryptoManager {
     public static final byte FLAG_CREDENIAL_RETRIEVAL_NAMESPACE = 9;
     private static final byte STATUS_FLAGS_SIZE = 2;
 
-    /*public static final byte STATUS_PROFILES_TOTAL = 0;
-    public static final byte STATUS_PROFILES_PERSONALIZED = 1;
-    public static final byte STATUS_ENTRIES_IN_NAMESPACE_TOTAL = 2;
-    public static final byte STATUS_ENTRIES_IN_NAMESPACE = 3;
-    public static final byte STATUS_ENTRY_AUTHDATA_LENGTH = 4;
-    public static final byte STATUS_NAMESPACES_ADDED = 5;
-    public static final byte STATUS_NAMESPACES_TOTAL = 6;
-    public static final byte STATUS_DOCTYPE_LEN = 7;
-    public static final byte STATUS_EPHKEY_LEN = 8;
-    private static final byte STATUS_WORDS = 9;*/
-    
     public static final byte AES_GCM_KEY_SIZE = 16; 
     public static final byte AES_GCM_TAG_SIZE = 16; 
     public static final byte AES_GCM_IV_SIZE = 12;
@@ -58,42 +47,21 @@ public class CryptoManager {
     // Temporary buffer in memory for keyLengths
     private final short[] mCredentialKeyPairLengths;
 
-    // KeyPair for credential key generation 
-    //private final KeyPair mCredentialECKeyPair;
-
-    // KeyPair for ephemeral key generation
-    //private final KeyPair mTempECKeyPair;
-    
-    //private final Cipher mCipher;
-    
     // Signature object for creating and verifying credential signatures 
-    //private final Signature mECSignature;
+    final MessageDigest mDigest;
+    // Digester object for calculating proof of provisioning data digest
+    final MessageDigest mSecondaryDigest;
+    // Digester object for calculating addition data digest
+    final MessageDigest mAdditionalDataDigester;
 
-    //private final Signature mHMACSignature;
-    
-    // Signature object for creating and verifying credential signatures 
-    private final MessageDigest mDigest;
-    
-    // Key for authentication signature computation
-    //private final HMACKey mHMACauthKey;
-    
-    // Helper object to compute the HMAC key from reader ephemeral public key and signing key 
-    //private final KeyAgreement mAuthentKeyGen;
-    
     // Random data generator 
     private final RandomData mRandomData;
-    
-    // Reference to the Access control manager instance
-    //private final AccessControlManager mAccessControlManager;
-    
+
     // Temporary buffer for all cryptography operations
     private final byte[] mTempBuffer;
     
     // Temporary buffer in memory for status flags
     private final byte[] mStatusFlags;
-
-    // Temporary buffer in memory for status information
-    //private final short[] mStatusWords;
 
     //TODO pre-shared key is hardcoded for now but we need to get it through either provisioning or from keymaster
     private byte[] mPreSharedKey = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -105,53 +73,22 @@ public class CryptoManager {
                 JCSystem.CLEAR_ON_DESELECT);
 
         mStatusFlags = JCSystem.makeTransientByteArray((short)(STATUS_FLAGS_SIZE), JCSystem.CLEAR_ON_DESELECT);
-        //mStatusWords = JCSystem.makeTransientShortArray(STATUS_WORDS, JCSystem.CLEAR_ON_DESELECT);
-        
+
         // Secure Random number generation for HBK
         mRandomData = RandomData.getInstance(RandomData.ALG_TRNG);
         mRandomData.nextBytes(mTempBuffer, (short)0, AES_GCM_KEY_SIZE);
         mHBK = JCSystem.makeTransientByteArray(AES_GCM_KEY_SIZE, JCSystem.CLEAR_ON_RESET);
         Util.arrayCopyNonAtomic(mTempBuffer, (short) 0, mHBK, (short) 0, AES_GCM_KEY_SIZE);
-        
-        // Overwrite this new HBK key in the buffer and initialize a test key 
-        //Util.arrayFillNonAtomic(mTempBuffer, (short) 0, AES_GCM_KEY_SIZE, (byte) 0);
-        //mTestKey = (AESKey) KeyBuilder.buildKey(KeyBuilder.TYPE_AES, KeyBuilder.LENGTH_AES_128, false);
-        //mTestKey.setKey(mTempBuffer, (short)0);
 
         // Create the storage key byte array 
         mCredentialStorageKey = JCSystem.makeTransientByteArray(AES_GCM_KEY_SIZE, JCSystem.CLEAR_ON_RESET);
         mCredentialKeyPair = JCSystem.makeTransientByteArray((short)(EC_KEY_SIZE * 3 + 1), JCSystem.CLEAR_ON_RESET);
         mCredentialKeyPairLengths = JCSystem.makeTransientShortArray((short)2, JCSystem.CLEAR_ON_RESET);
-        
-        //mCipher = AEADCipher.getInstance(AEADCipher.ALG_AES_GCM, AEADCipher.PAD_PKCS1, false);
-        
-        // Configure key pair for elliptic curve key generation
-        //mCredentialECKeyPair = new KeyPair(
-        //        (ECPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PUBLIC, KeyBuilder.LENGTH_EC_FP_256, false),
-        //        (ECPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT, KeyBuilder.LENGTH_EC_FP_256, false));
-        
-        //mTempECKeyPair = new KeyPair(
-        //        (ECPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PUBLIC, KeyBuilder.LENGTH_EC_FP_256, false),
-        //        (ECPrivateKey) KeyBuilder.buildKey(KeyBuilder.TYPE_EC_FP_PRIVATE_TRANSIENT_DESELECT, KeyBuilder.LENGTH_EC_FP_256, false));
 
-        // At the moment we only support SEC-P256r1. Hence, can be configured at install time.
-        //Secp256r1.configureECKeyParameters((ECKey) mCredentialECKeyPair.getPrivate());
-        //Secp256r1.configureECKeyParameters((ECKey) mCredentialECKeyPair.getPublic());
-        //Secp256r1.configureECKeyParameters((ECKey) mTempECKeyPair.getPrivate());
-        //Secp256r1.configureECKeyParameters((ECKey) mTempECKeyPair.getPublic());
-
-        // Initialize the object for signing data using EC
-        //mECSignature = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
-        
         mDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
+        mSecondaryDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
+        mAdditionalDataDigester = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
 
-        //mHMACauthKey = (HMACKey) KeyBuilder.buildKey(KeyBuilder.TYPE_HMAC_TRANSIENT_DESELECT,
-        //        (short) (KeyBuilder.LENGTH_HMAC_SHA_256_BLOCK_64 * 8), false);
-        //mHMACSignature = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
-
-        //mAuthentKeyGen= KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
-        
-        //mAccessControlManager = accessControlManager;
     }
 
     /**
@@ -168,18 +105,8 @@ public class CryptoManager {
         ICUtil.setBit(mStatusFlags, FLAG_CREDENIAL_RETRIEVAL_ENTRIES, false);
         ICUtil.setBit(mStatusFlags, FLAG_CREDENIAL_RETRIEVAL_CHUNKED, false);
         ICUtil.setBit(mStatusFlags, FLAG_CREDENIAL_RETRIEVAL_NAMESPACE, false);
-        
-        /*mStatusWords[STATUS_ENTRIES_IN_NAMESPACE] = 0;
-        mStatusWords[STATUS_ENTRIES_IN_NAMESPACE_TOTAL] = 0;
-        mStatusWords[STATUS_ENTRY_AUTHDATA_LENGTH] = 0;
-        mStatusWords[STATUS_DOCTYPE_LEN] = 0;
-        mStatusWords[STATUS_EPHKEY_LEN] = 0;
-        
-        ICUtil.shortArrayFillNonAtomic(mStatusWords, (short) 0, STATUS_WORDS, (short) 0);*/
 
         Util.arrayFillNonAtomic(mCredentialStorageKey, (short)0, KeyBuilder.LENGTH_AES_128, (byte)0);
-        //mCredentialECKeyPair.getPrivate().clearKey();
-        //Secp256r1.configureECKeyParameters((ECKey) mCredentialECKeyPair.getPrivate());
     }
     
     /**
@@ -304,8 +231,6 @@ public class CryptoManager {
         }
     }
     
-//byte[] nonce = new byte[] {(byte)0xBD, (byte)0xB1, (byte)0xEE, (byte)0xE0, (byte)0x31, (byte)0x3D, (byte)0x90, (byte)0xA0, (byte)0xDE, (byte)0x08, (byte)0x35, (byte)0x87};
-//byte[] storeageKey = new byte[] {(byte)0xAD, (byte)0xE1, (byte)0x65, (byte)0xBC, (byte)0xA8, (byte)0xD5, (byte)0x45, (byte)0x3D, (byte)0x3B, (byte)0xAD, (byte)0x73, (byte)0x9C, (byte)0x72, (byte)0x53, (byte)0x8C, (byte)0x58};
     public short aesGCMEncrypt(byte[] data, short dataOffset, short dataLen,
     		byte[] outData, short outDataOffset,
     		byte[] authData, short authDataOffset, short authDataLen,
@@ -319,28 +244,19 @@ public class CryptoManager {
     			outNonceAndTag, (short)outNonceAndTagOff, AES_GCM_IV_SIZE,
     			authData, authDataOffset, authDataLen,
     			outNonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
-    	
-    	/*Util.arrayCopyNonAtomic(nonce, (short) 0, outNonceAndTag, (short) outNonceAndTagOff, AES_GCM_IV_SIZE);
-    	return mCryptoProvider.aesGCMEncrypt(storeageKey, (short)0, (short)(storeageKey.length),
-    			data, dataOffset, dataLen,
-    			outData, outDataOffset,
-    			outNonceAndTag, (short)outNonceAndTagOff, AES_GCM_IV_SIZE,
-    			authData, authDataOffset, authDataLen,
-    			outNonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
-		*/
     }
 
     public boolean aesGCMDecrypt(byte[] encData, short encDataOffset, short encDataLen,
                                byte[] outData, short outDataOffset,
                                byte[] authData, short authDataOffset, short authDataLen,
-                               byte[] nonceAndTag, short outNonceAndTagOff) {
+                               byte[] nonceAndTag, short nonceAndTagOff) {
 
         return mCryptoProvider.aesGCMDecrypt(mCredentialStorageKey, (short)0, (short)mCredentialStorageKey.length,
                 encData, encDataOffset, encDataLen,
                 outData, outDataOffset,
-                nonceAndTag, outNonceAndTagOff, AES_GCM_IV_SIZE,
+                nonceAndTag, nonceAndTagOff, AES_GCM_IV_SIZE,
                 authData, authDataOffset, authDataLen,
-                nonceAndTag, (short)(outNonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
+                nonceAndTag, (short)(nonceAndTagOff + AES_GCM_IV_SIZE), AES_GCM_TAG_SIZE);
     }
 
     short entryptCredentialData(boolean isTestCredential,
@@ -421,5 +337,9 @@ public class CryptoManager {
         return mCryptoProvider.hmacVerify(key, keyOffset, keyLen,
                                     data, dataOffset, dataLen,
                                     mac, macOffset, macLen);
+    }
+
+    public boolean verifyCertByPubKey(byte[] cert, short certOffset, short certLen, byte[] pubKey, short pubKeyOffset, short pubKeyLen) {
+        return mCryptoProvider.verifyCertByPubKey(cert, certOffset, certLen, pubKey, pubKeyOffset, pubKeyLen);
     }
 }

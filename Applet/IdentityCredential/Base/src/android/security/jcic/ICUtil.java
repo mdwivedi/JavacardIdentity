@@ -19,6 +19,7 @@ package android.security.jcic;
 
 import javacard.framework.ISOException;
 import javacard.framework.Util;
+import javacard.security.MessageDigest;
 
 import static android.security.jcic.ICConstants.*;
 import static android.security.jcic.ICConstants.LONG_SIZE;
@@ -145,15 +146,15 @@ public class ICUtil {
         short sum;
         byte carry = (byte)0;
         while(index > (byte)0) {
-            if(index >= secondLen) {
+            if(index >= (firstLen - secondLen)) {
                 short a1 = (short)(first[(short)(firstOffset + index)] & 0x00FF);
-                short a2 = (short)(second[(short)(secondOffset + index - (short)2)] & 0x00FF);
+                short a2 = (short)(second[(short)(secondOffset + index - (short)(firstLen - secondLen))] & 0x00FF);
                 sum = (short)(carry + a1 + a2);
             } else {
                 short a1 = (short)(first[(short)(firstOffset + index)] & 0x00FF);
                 sum = (short)(carry + a1);
             }
-            first[index] = (byte)sum;
+            first[firstOffset + index] = (byte)sum;
             carry = (byte) (sum > 255 ? 1 : 0);
             index--;
         }
@@ -258,6 +259,48 @@ public class ICUtil {
                 cborDecoder.skipEntry();
             }
         }
+
+        return cborEncoder.getCurrentOffset();
+    }
+
+    public static short constAndCalcCBOREntryAdditionalData(CBORDecoder cborDecoder, CBOREncoder cborEncoder,
+                                                            MessageDigest messageDigest,
+                                                   byte[] inBuff, short inOffset, short inLen,
+                                                   byte[] outBuff, short outOffset, short outLen,
+                                                   byte[] shaOut, short shaOutOff,
+                                                   byte[] tempBuffer, short tempBuffOffset) {
+
+        cborDecoder.init(inBuff, inOffset, inLen);
+        cborEncoder.init(outBuff, outOffset, outLen);
+        cborDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+        cborEncoder.startMap((short) 3);
+        //encode key as Namespace string
+        cborEncoder.encodeTextString(STR_NAME_SPACE, (short)0, (short)STR_NAME_SPACE.length);
+        //Hold nameSpace in temp variable
+        short nameSpaceLen = cborDecoder.readByteString(tempBuffer, tempBuffOffset);
+        //encode nameSpace string
+        cborEncoder.encodeTextString(tempBuffer, tempBuffOffset, nameSpaceLen);
+        //encode key as Name string, lets use it from Namespace string
+        cborEncoder.encodeTextString(STR_NAME_SPACE, (short)0, (short)4);
+        //read name parameter
+        short nameLen = cborDecoder.readByteString(tempBuffer, tempBuffOffset);
+        cborEncoder.encodeTextString(tempBuffer, tempBuffOffset, nameLen);
+
+        //encode key as AccessControlProfileIds string
+        cborEncoder.encodeTextString(STR_ACCESS_CONTROL_PROFILE_IDS, (short)0, (short)STR_ACCESS_CONTROL_PROFILE_IDS.length);
+        short acpIdLen = cborDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+        cborEncoder.startArray(acpIdLen);
+        for(short i = (short)0; i < acpIdLen; i++) {
+            byte intSize = cborDecoder.getIntegerSize();
+            if(intSize == BYTE_SIZE) {
+                cborEncoder.encodeUInt8(cborDecoder.readInt8());
+            } else if(intSize == SHORT_SIZE) {
+                cborEncoder.encodeUInt16(cborDecoder.readInt16());
+            } else {
+                ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+            }
+        }
+        messageDigest.doFinal(outBuff, outOffset, cborEncoder.getCurrentOffset(), shaOut, shaOutOff);
 
         return cborEncoder.getCurrentOffset();
     }

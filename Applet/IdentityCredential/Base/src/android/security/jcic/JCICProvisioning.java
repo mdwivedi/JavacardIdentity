@@ -25,16 +25,13 @@ final class JCICProvisioning {
     // Reference to the internal CBOR encoder instance
     private final CBOREncoder mCBOREncoder;
 
-    
     // Digester object for calculating provisioned data digest 
     private final MessageDigest mDigest;
-
     // Digester object for calculating proof of provisioning data digest 
     private final MessageDigest mSecondaryDigest;
-    
-    // Digester object for calculating addition data digest 
+    // Digester object for calculating addition data digest
     private final MessageDigest mAdditionalDataDigester;
-    
+
     private final short[] mEntryCounts;
 
     private final byte[] mIntExpectedCborSizeAtEnd;
@@ -57,10 +54,10 @@ final class JCICProvisioning {
 
         mAdditionalDataSha256 = JCSystem.makeTransientByteArray(CryptoManager.SHA256_DIGEST_SIZE, JCSystem.CLEAR_ON_DESELECT);
 
-        mDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
-        mSecondaryDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
-        mAdditionalDataDigester = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
-        
+        mDigest = mCryptoManager.mDigest;
+        mSecondaryDigest = mCryptoManager.mSecondaryDigest;
+        mAdditionalDataDigester = mCryptoManager.mAdditionalDataDigester;
+
         mIntExpectedCborSizeAtEnd = JCSystem.makeTransientByteArray((short) INT_SIZE, JCSystem.CLEAR_ON_RESET);
         mIntCurrentCborSize = JCSystem.makeTransientByteArray((short) (INT_SIZE + SHORT_SIZE), JCSystem.CLEAR_ON_RESET);
         mIntCurrentEntrySize = JCSystem.makeTransientByteArray((short) INT_SIZE, JCSystem.CLEAR_ON_RESET);
@@ -345,8 +342,8 @@ final class JCICProvisioning {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
         }
 
-        constAndCalcCBOREntryAdditionalData(receiveBuffer, mAPDUManager.getOffsetIncomingData(), mAPDUManager.getReceivingLength(),
-        		outBuffer, (short)0, le, mAdditionalDataSha256, (short) 0);
+        ICUtil.constAndCalcCBOREntryAdditionalData(mCBORDecoder, mCBOREncoder, mAdditionalDataDigester, receiveBuffer, mAPDUManager.getOffsetIncomingData(), mAPDUManager.getReceivingLength(),
+        		outBuffer, (short)0, le, mAdditionalDataSha256, (short) 0, tempBuffer, (short)0);
 
         mCBORDecoder.init(receiveBuffer, mAPDUManager.getOffsetIncomingData(), mAPDUManager.getReceivingLength());
         mCBOREncoder.init(outBuffer, (short)0, le);
@@ -409,47 +406,6 @@ final class JCICProvisioning {
         mAPDUManager.setOutgoingLength(mCBOREncoder.getCurrentOffset());
 	}
 
-	private short constAndCalcCBOREntryAdditionalData(byte[] inBuff, short inOffset, short inLen,
-											byte[] outBuff, short outOffset, short outLen,
-											byte[] shaOut, short shaOutOff) {
-
-        byte[] tempBuffer = mCryptoManager.getTempBuffer();
-        mCBORDecoder.init(inBuff, inOffset, inLen);
-        mCBOREncoder.init(outBuff, outOffset, outLen);
-        mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
-        mCBOREncoder.startMap((short) 3);
-        //encode key as Namespace string
-        mCBOREncoder.encodeTextString(STR_NAME_SPACE, (short)0, (short)STR_NAME_SPACE.length);
-        //Hold nameSpace in temp variable
-        short nameSpaceLen = mCBORDecoder.readByteString(tempBuffer, (short) 0);
-        //encode nameSpace string
-        mCBOREncoder.encodeTextString(tempBuffer, (short)0, nameSpaceLen);
-        //encode key as Name string, lets use it from Namespace string
-        mCBOREncoder.encodeTextString(STR_NAME_SPACE, (short)0, (short)4);
-        //read name parameter
-        short nameLen = mCBORDecoder.readByteString(tempBuffer, (short) 0);
-        mCBOREncoder.encodeTextString(tempBuffer, (short) 0, nameLen);
-        
-        //encode key as AccessControlProfileIds string
-        mCBOREncoder.encodeTextString(STR_ACCESS_CONTROL_PROFILE_IDS, (short)0, (short)STR_ACCESS_CONTROL_PROFILE_IDS.length);
-        short acpIdLen = mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
-        mCBOREncoder.startArray(acpIdLen);
-        for(short i = (short)0; i < acpIdLen; i++) {
-        	//Util.arrayCopyNonAtomic(inBuff, mCBORDecoder.getCurrentOffset(), outBuff, mCBOREncoder.getCurrentOffsetAndIncrease(mCBORDecoder.readLength()), mCBORDecoder.readLength());
-        	byte intSize = mCBORDecoder.getIntegerSize();
-        	if(intSize == BYTE_SIZE) {
-        		mCBOREncoder.encodeUInt8(mCBORDecoder.readInt8());
-        	} else if(intSize == SHORT_SIZE) {
-        		mCBOREncoder.encodeUInt16(mCBORDecoder.readInt16());
-        	} else {
-                ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
-            }
-        }
-        mAdditionalDataDigester.doFinal(outBuff, outOffset, mCBOREncoder.getCurrentOffset(), shaOut, shaOutOff);
-        
-        return mCBOREncoder.getCurrentOffset();
-	}
-
 	private void processAddEntryValue() {
         mCryptoManager.assertInPersonalizationState();
         mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENIAL_PERSONALIZING_PROFILES);
@@ -464,8 +420,8 @@ final class JCICProvisioning {
         }
         mCBORDecoder.init(receiveBuffer, mAPDUManager.getOffsetIncomingData(), mAPDUManager.getReceivingLength());
         mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
-        short additionalDataLen = constAndCalcCBOREntryAdditionalData(receiveBuffer, mCBORDecoder.getCurrentOffset(), mAPDUManager.getReceivingLength(),
-        		outBuffer, (short)0, le, tempBuffer, (short) 0);
+        short additionalDataLen = ICUtil.constAndCalcCBOREntryAdditionalData(mCBORDecoder, mCBOREncoder, mAdditionalDataDigester, receiveBuffer, mCBORDecoder.getCurrentOffset(), mAPDUManager.getReceivingLength(),
+        		outBuffer, (short)0, le, tempBuffer, (short) 0, tempBuffer, CryptoManager.SHA256_DIGEST_SIZE);
 
         //Compare calculated hash of additional data with preserved hash from addEntry
         if(Util.arrayCompare(tempBuffer, (short) 0, mAdditionalDataSha256, (short) 0, CryptoManager.SHA256_DIGEST_SIZE) != (byte)0) {

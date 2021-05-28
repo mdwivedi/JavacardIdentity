@@ -68,4 +68,22 @@ public interface ISO7816 extends javacard.framework.ISO7816 {
      * Error messages
      */
     short SW_INSUFFICIENT_MEMORY = (short) 0x6A84;
+
+    interface AccessCheckResult {
+        // Returned if access is granted.
+        short ERR_ACCESS_CHECK_RESULT_OK = (short) 0;
+
+        // Returned if an error occurred checking for access.
+        short ERR_ACCESS_CHECK_RESULT_FAILED = (short) 1;
+
+        // Returned if access was denied because item is configured without any
+        // access control profiles.
+        short ERR_ACCESS_CHECK_RESULT_NO_ACCESS_CONTROL_PROFILES = (short) 2;
+
+        // Returned if access was denied because of user authentication.
+        short ERR_ACCESS_CHECK_RESULT_USER_AUTHENTICATION_FAILED = (short) 3;
+
+        // Returned if access was denied because of reader authentication.
+        short ERR_ACCESS_CHECK_RESULT_READER_AUTHENTICATION_FAILED = (short) 4;
+    }
 }

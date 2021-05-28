@@ -29,13 +29,19 @@ final class JCICPresentation {
 	private final byte[] mEphemeralPrivateKey;
 
 	private final byte[] mReaderPublicKey;
-	private final short[] mReaderPublicKeySize;
+	private short mReaderPublicKeySize;
 
     private final short[] mKeyPairLengthsHolder;
 
     private final byte[] mAuthChallenge;
 
+	private final byte[] mAdditionalDataSha256;
+
+	// Digester object for calculating provisioned data digest
 	private final MessageDigest mDigest;
+	// Digester object for calculating addition data digest
+	private final MessageDigest mAdditionalDataDigester;
+
 	private final HMACKey mHmacKey;
 	private final Signature mHmacSignature;
 
@@ -84,16 +90,18 @@ final class JCICPresentation {
 		mAuthChallenge = JCSystem.makeTransientByteArray(LONG_SIZE, JCSystem.CLEAR_ON_RESET);
 
 		mReaderPublicKey = JCSystem.makeTransientByteArray((short)65/*Max public key size*/, JCSystem.CLEAR_ON_RESET);
-		mReaderPublicKeySize = JCSystem.makeTransientShortArray((short)1, JCSystem.CLEAR_ON_RESET);
+		mReaderPublicKeySize = (short)0;
 
 		mStatus = JCSystem.makeTransientBooleanArray((short) 2, JCSystem.CLEAR_ON_RESET);
-
 
 		mAcpMasksInts = JCSystem.makeTransientByteArray((short)(mAccessControlProfileMaskFailedUserAuthOffset + INT_SIZE), JCSystem.CLEAR_ON_RESET);
 
 		mAuthAndVerificationTokensLongs = JCSystem.makeTransientByteArray((short)(mVerificationTokenTimestampOffset + LONG_SIZE), JCSystem.CLEAR_ON_RESET);
 
-		mDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
+		mDigest = mCryptoManager.mDigest;
+		mAdditionalDataDigester = mCryptoManager.mAdditionalDataDigester;
+
+		mAdditionalDataSha256 = JCSystem.makeTransientByteArray(CryptoManager.SHA256_DIGEST_SIZE, JCSystem.CLEAR_ON_DESELECT);
 
 		mIntExpectedCborSizeAtEnd = JCSystem.makeTransientByteArray(INT_SIZE, JCSystem.CLEAR_ON_RESET);
 		mIntCurrentCborSize = JCSystem.makeTransientByteArray((short)(INT_SIZE + SHORT_SIZE), JCSystem.CLEAR_ON_RESET);
@@ -161,10 +169,16 @@ final class JCICPresentation {
 						outBuffer, le, tempBuffer);
 				break;
 			case ISO7816.INS_ICS_START_RETRIEVE_ENTRY_VALUE:
+				outGoingLength = processStartRetrieveEntryValue(receiveBuffer, receivingDataOffset, receivingDataLength,
+						outBuffer, le, tempBuffer);
 				break;
 			case ISO7816.INS_ICS_RETRIEVE_ENTRY_VALUE:
+				outGoingLength = processRetrieveEntryValue(receiveBuffer, receivingDataOffset, receivingDataLength,
+						outBuffer, le, tempBuffer);
 				break;
 			case ISO7816.INS_ICS_FINISH_RETRIEVAL:
+				outGoingLength = processFinishRetrieval(receiveBuffer, receivingDataOffset, receivingDataLength,
+						outBuffer, le, tempBuffer);
 				break;
 			case ISO7816.INS_ICS_GENERATE_SIGNING_KEY_PAIR:
 				outGoingLength = processGenerateSingingKeyPair(receiveBuffer, receivingDataOffset, receivingDataLength,
@@ -459,18 +473,31 @@ final class JCICPresentation {
 		if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
 			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
 		}
+		byte returnStatus = (byte)1;//failed
+		try {
+			mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
+			mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+			short outPubKeyOffset;
+			short certOffset = (short) 0;
+			short certLen = outPubKeyOffset = mCBORDecoder.readByteString(tempBuffer, certOffset);
 
-		mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
-		mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
-		short outPubKeyOffset;
-		short certLen = outPubKeyOffset = mCBORDecoder.readByteString(tempBuffer, (short)0);
-		short pubKeySize = extractPublicKeyFromCertificate(tempBuffer, (short)0, certLen, tempBuffer, outPubKeyOffset);
-		Util.arrayCopyNonAtomic(tempBuffer, outPubKeyOffset, mReaderPublicKey, (short)0, pubKeySize);
-		mReaderPublicKeySize[(short)0] = pubKeySize;
+			if (mReaderPublicKeySize > 0) {
+				if (!mCryptoManager.verifyCertByPubKey(tempBuffer, certOffset, certLen,
+						mReaderPublicKey, (short) 0, mReaderPublicKeySize)) {
+					returnStatus = (byte)1; //failed
+					ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+				}
+			}
+
+			short pubKeySize = extractPublicKeyFromCertificate(tempBuffer, certOffset, certLen, tempBuffer, outPubKeyOffset);
+			Util.arrayCopyNonAtomic(tempBuffer, outPubKeyOffset, mReaderPublicKey, (short) 0, pubKeySize);
+			mReaderPublicKeySize = pubKeySize;
+			returnStatus = (byte)0;//success
+		} catch (ISOException e) {}
 
 		mCBOREncoder.init(outBuffer, (short) 0, le);
 		mCBOREncoder.startArray((short)1);
-		mCBOREncoder.encodeUInt8((byte)0); //Success
+		mCBOREncoder.encodeUInt8(returnStatus);
 		return mCBOREncoder.getCurrentOffset();
 	}
 
@@ -490,7 +517,7 @@ final class JCICPresentation {
 		Util.arrayFillNonAtomic(mAcpMasksInts, mAccessControlProfileMaskUsesReaderAuthOffset, INT_SIZE, (byte)0);
 		Util.arrayFillNonAtomic(mAcpMasksInts, mAccessControlProfileMaskFailedReaderAuthOffset, INT_SIZE, (byte)0);
 		Util.arrayFillNonAtomic(mAcpMasksInts, mAccessControlProfileMaskFailedUserAuthOffset, INT_SIZE, (byte)0);
-		mReaderPublicKeySize[0] = 0;
+		mReaderPublicKeySize = 0;
 
 		mCBOREncoder.init(outBuffer, (short) 0, le);
 		mCBOREncoder.startArray((short)1);
@@ -561,6 +588,8 @@ final class JCICPresentation {
 		// However this involves calculating the MAC which requires access to the to
 		// a pre-shared key which we don't have...
 		//
+		return true;
+/*TODO need to remove comment after making sure vts passes with this change. Default implementation does not have this implementation.
 		//TODO this need to revisit, currently hardcoded pre-shared key is used which need to get from provision or keymaster.
 
 		mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
@@ -589,6 +618,7 @@ final class JCICPresentation {
 				preSharedKey, (short)0, (short)preSharedKey.length, //pre-shared key
 				tempBuffer, tempBufferOffset, totalLen, //data
 				tempBuffer, macOffset, macLen); //mac
+*/
 	}
 
 	private short processValidateAccessControlProfile(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
@@ -613,12 +643,12 @@ final class JCICPresentation {
 		}
 		short timeoutMillisOffset = (short)0;
 		boolean userAuthenticationRequired = mCBORDecoder.readBoolean();// userAuthenticationRequired
-		short timeoutMillisLen = ICUtil.readUint(mCBORDecoder, tempBuffer, (short)(timeoutMillisOffset + LONG_SIZE));// timeoutMillis
-		timeoutMillisLen = Util.arrayCopyNonAtomic(tempBuffer, (short)(timeoutMillisOffset + LONG_SIZE), tempBuffer, timeoutMillisOffset, timeoutMillisLen);
-		short secureUserIdOffset = (short) (timeoutMillisOffset + timeoutMillisLen);
-		short secureUserIdLen = ICUtil.readUint(mCBORDecoder, tempBuffer, secureUserIdOffset);// secureUserId
-		secureUserIdLen = Util.arrayCopyNonAtomic(tempBuffer, (short)(secureUserIdOffset + LONG_SIZE), tempBuffer, secureUserIdOffset, secureUserIdLen);
-		short readerCertOffset = (short) (secureUserIdOffset + secureUserIdLen);
+		intSize = mCBORDecoder.getIntegerSize();
+		ICUtil.readUint(mCBORDecoder, tempBuffer, (short)(timeoutMillisOffset + LONG_SIZE - intSize));// timeoutMillis
+		intSize = mCBORDecoder.getIntegerSize();
+		short secureUserIdOffset = (short) (timeoutMillisOffset + LONG_SIZE);
+		ICUtil.readUint(mCBORDecoder, tempBuffer, (short)(secureUserIdOffset  + LONG_SIZE - intSize));// secureUserId
+		short readerCertOffset = (short) (secureUserIdOffset + LONG_SIZE);
 		short readerCertLen = mCBORDecoder.readByteString(tempBuffer, readerCertOffset);// reader certificate
 		short macOffset = (short) (readerCertOffset + readerCertLen);
 		short macLen = mCBORDecoder.readByteString(tempBuffer, macOffset);//mac - it contains only NONCE and TAG
@@ -694,7 +724,7 @@ final class JCICPresentation {
 	private boolean checkReaderAuth(byte[] readerCert, short readerCertOffset, short readerCertLen,
 									byte[] tempBuffer, short tempOffset) {
 		if(readerCertLen == (short)0) {
-			return false;
+			return true;
 		}
 
 		// Remember in this case certificate equality is done by comparing public
@@ -704,7 +734,7 @@ final class JCICPresentation {
 		if(pubKeyLen == 0) {
 			return false;
 		}
-		if(mReaderPublicKeySize[(short)0] != pubKeyLen || (Util.arrayCompare(mReaderPublicKey, (short)0, tempBuffer, tempOffset, pubKeyLen) != (byte)0)) {
+		if(mReaderPublicKeySize != pubKeyLen || (Util.arrayCompare(mReaderPublicKey, (short)0, tempBuffer, tempOffset, pubKeyLen) != (byte)0)) {
 			return false;
 		}
 
@@ -720,7 +750,7 @@ final class JCICPresentation {
 			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
 		}
 
-		if(mReaderPublicKeySize[0] == (short)0) {
+		if(mReaderPublicKeySize == (short)0) {
 			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
 		}
 
@@ -820,7 +850,7 @@ final class JCICPresentation {
 
 		mDigest.reset();
 		short tempShaLen = mDigest.doFinal(mCBOREncoder.getBuffer(), (short)0, mCBOREncoder.getCurrentOffset(), tempBuffer, tempShaOffset);
-		if(!mCryptoManager.ecVerifyWithNoDigest(mReaderPublicKey, (short)0, mReaderPublicKeySize[0],
+		if(!mCryptoManager.ecVerifyWithNoDigest(mReaderPublicKey, (short)0, mReaderPublicKeySize,
 								tempBuffer, tempShaOffset, tempShaLen,
 								tempBuffer, readerSignatureOfTBSOffset, readerSignatureOfTBSLen)) {
 			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
@@ -1001,6 +1031,9 @@ final class JCICPresentation {
 		mCBOREncoder.encodeTag(CBOR_SEMANTIC_TAG_ENCODED_CBOR);
 		mCBOREncoder.startByteString(tempBuffer, expectedDeviceNamespacesSizeOffset, expectedDeviceNamespacesSizeLen);
 
+		Util.arrayFillNonAtomic(mIntExpectedCborSizeAtEnd, (short)0, INT_SIZE, (byte)0);
+		Util.arrayFillNonAtomic(mIntCurrentCborSize, (short)0, INT_SIZE, (byte)0);
+
 		Util.arrayCopyNonAtomic(tempBuffer, expectedDeviceNamespacesSizeOffset, mIntExpectedCborSizeAtEnd, (short)(INT_SIZE - expectedDeviceNamespacesSizeLen), expectedDeviceNamespacesSizeLen);
 		Util.setShort(tempBuffer, tempBuffFreeOffset, mCBOREncoder.getCurrentOffset());
 		ICUtil.incrementByteArray(mIntExpectedCborSizeAtEnd, (short)0, INT_SIZE, tempBuffer, tempBuffFreeOffset, SHORT_SIZE);
@@ -1017,6 +1050,181 @@ final class JCICPresentation {
 		mCBOREncoder.init(outBuffer, (short) 0, le);
 		mCBOREncoder.startArray((short)1);
 		mCBOREncoder.encodeUInt8((byte)0); //Success
+		return mCBOREncoder.getCurrentOffset();
+	}
+
+	private short processStartRetrieveEntryValue(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength, byte[] outBuffer, short le, byte[] tempBuffer) {
+		//If P1P2 other than 0000 throw exception
+		if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
+			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+		}
+		short result = ISO7816.AccessCheckResult.ERR_ACCESS_CHECK_RESULT_FAILED;
+
+		try {
+			// We'll need to calc and store a digest of additionalData to check that it's the same
+			// mAdditionalDataSha256 being passed in for every processRetrieveEntryValue() call...
+			try {
+				ICUtil.constAndCalcCBOREntryAdditionalData(mCBORDecoder, mCBOREncoder, mAdditionalDataDigester,
+						receiveBuffer, receivingDataOffset, receivingDataLength,
+						outBuffer, (short) 0, le,
+						mAdditionalDataSha256, (short) 0,
+						tempBuffer, (short) 0);
+			} catch (ISOException e) {
+				ISOException.throwIt(ISO7816.AccessCheckResult.ERR_ACCESS_CHECK_RESULT_FAILED);
+			}
+
+			mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
+			mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+			short namespaceOffset = (short) 0;
+			short namespaceLen = mCBORDecoder.readByteString(tempBuffer, namespaceOffset);
+			short nameOffset = (short) (namespaceOffset + namespaceLen);
+			short nameLen = mCBORDecoder.readByteString(tempBuffer, nameOffset);
+			short accessControlProfileIdsOffset = mCBORDecoder.getCurrentOffset();
+			mCBORDecoder.skipEntry();//accessControlProfileIds
+			mCBORDecoder.skipEntry();//entrySize
+			short newNamespaceNumEntriesOffset = (short) (nameOffset + nameLen);
+			short newNamespaceNumEntriesLen = ICUtil.readUint(mCBORDecoder, tempBuffer, newNamespaceNumEntriesOffset);
+
+			if (newNamespaceNumEntriesLen > BYTE_SIZE || (newNamespaceNumEntriesLen == BYTE_SIZE && tempBuffer[newNamespaceNumEntriesOffset] > 0x0)) {
+				mCBOREncoder.init(outBuffer, (short) 0, le);
+				mCBOREncoder.encodeTextString(tempBuffer, namespaceOffset, namespaceLen);
+				if (newNamespaceNumEntriesLen == BYTE_SIZE) {
+					mCBOREncoder.startMap(tempBuffer[newNamespaceNumEntriesOffset]);
+				} else if (newNamespaceNumEntriesLen == SHORT_SIZE) {
+					mCBOREncoder.startMap(Util.getShort(tempBuffer, newNamespaceNumEntriesOffset));
+				} else {
+					ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+				}
+				updateCborHmac(mCBOREncoder.getBuffer(), (short) 0, mCBOREncoder.getCurrentOffset());
+			}
+
+			mCBORDecoder.init(receiveBuffer, accessControlProfileIdsOffset, receivingDataLength);
+			short numAccessControlProfileIds = mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+			if (numAccessControlProfileIds == (short)0) {
+				ISOException.throwIt(ISO7816.AccessCheckResult.ERR_ACCESS_CHECK_RESULT_NO_ACCESS_CONTROL_PROFILES);
+			}
+
+			// Access is granted if at least one of the profiles grants access.
+			//
+			// If an item is configured without any profiles, access is denied.
+			//
+			for (short n = (short) 0; n < numAccessControlProfileIds; n++) {
+				byte id = mCBORDecoder.readInt8();
+				byte idBitMaskOffset = (byte) (INT_SIZE - (id / (short)8) - (short)1);
+				byte idBitMask = (byte)(1 << (id % (short)8));
+
+				// If the access control profile wasn't validated, this is an error and we
+				// fail immediately.
+				boolean validated = ((mAcpMasksInts[(short)(mAccessControlProfileMaskValidatedOffset + idBitMaskOffset)] & idBitMask) != 0);
+				if (!validated) {
+					ISOException.throwIt(ISO7816.AccessCheckResult.ERR_ACCESS_CHECK_RESULT_FAILED);
+				}
+
+				// Otherwise, we _did_ validate the profile. If none of the checks
+				// failed, we're done
+				boolean failedUserAuth = ((mAcpMasksInts[(short)(mAccessControlProfileMaskFailedUserAuthOffset + idBitMaskOffset)] & idBitMask) != 0);
+				boolean failedReaderAuth = ((mAcpMasksInts[(short)(mAccessControlProfileMaskFailedReaderAuthOffset + idBitMaskOffset)] & idBitMask) != 0);
+				if (!failedUserAuth && !failedReaderAuth) {
+					result = ISO7816.AccessCheckResult.ERR_ACCESS_CHECK_RESULT_OK;
+					break;
+				}
+				// One of the checks failed, convey which one
+				if (failedUserAuth) {
+					result = ISO7816.AccessCheckResult.ERR_ACCESS_CHECK_RESULT_USER_AUTHENTICATION_FAILED;
+				} else {
+					result = ISO7816.AccessCheckResult.ERR_ACCESS_CHECK_RESULT_READER_AUTHENTICATION_FAILED;
+				}
+			}
+
+			if (result == ISO7816.AccessCheckResult.ERR_ACCESS_CHECK_RESULT_OK) {
+				mCBOREncoder.init(outBuffer, (short) 0, le);
+				mCBOREncoder.encodeTextString(tempBuffer, nameOffset, nameLen);
+				updateCborHmac(mCBOREncoder.getBuffer(), (short) 0, mCBOREncoder.getCurrentOffset());
+			}
+		} catch (ISOException e) {
+			result = e.getReason();
+		}
+		mCBOREncoder.init(outBuffer, (short) 0, le);
+		mCBOREncoder.startArray((short)1);
+		mCBOREncoder.encodeUInt8((byte)result); //Success
+		return mCBOREncoder.getCurrentOffset();
+	}
+
+	private short processRetrieveEntryValue(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength, byte[] outBuffer, short le, byte[] tempBuffer) {
+		//If P1P2 other than 0000 throw exception
+		if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
+			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+		}
+
+		mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
+		mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+		short additionalDataLen = ICUtil.constAndCalcCBOREntryAdditionalData(mCBORDecoder, mCBOREncoder, mAdditionalDataDigester,
+				receiveBuffer, mCBORDecoder.getCurrentOffset(), receivingDataLength,
+				tempBuffer, (short)0, CryptoManager.TEMP_BUFFER_SIZE, outBuffer, (short) 0, outBuffer, CryptoManager.SHA256_DIGEST_SIZE);
+
+		//Compare calculated hash of additional data with preserved hash from addEntry
+		if(Util.arrayCompare(outBuffer, (short) 0, mAdditionalDataSha256, (short) 0, CryptoManager.SHA256_DIGEST_SIZE) != (byte)0) {
+			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+		}
+
+		//We need to reset decoder
+		mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
+		mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+		mCBORDecoder.skipEntry(); //Skip additionalData
+
+		//read encrypted content
+		short encryptedContentOffset = additionalDataLen;
+		short encryptedContentLen = mCBORDecoder.readByteString(tempBuffer, encryptedContentOffset);
+		Util.arrayCopyNonAtomic(tempBuffer, encryptedContentOffset, tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS, CryptoManager.AES_GCM_IV_SIZE);
+		Util.arrayCopyNonAtomic(tempBuffer, (short) (encryptedContentOffset + encryptedContentLen - CryptoManager.AES_GCM_TAG_SIZE), tempBuffer, CryptoManager.TEMP_BUFFER_GCM_TAG_POS, CryptoManager.AES_GCM_TAG_SIZE);
+
+		encryptedContentLen = (short) (encryptedContentLen - CryptoManager.AES_GCM_IV_SIZE - CryptoManager.AES_GCM_TAG_SIZE);
+		mCBOREncoder.init(outBuffer, (short) 0, le);
+		mCBOREncoder.startArray((short)2);
+		mCBOREncoder.encodeUInt8((byte)0); //Success
+		mCBOREncoder.startArray((short)1);
+		mCBOREncoder.startByteString(encryptedContentLen);
+		if(!mCryptoManager.aesGCMDecrypt(tempBuffer, (short) (encryptedContentOffset + CryptoManager.AES_GCM_IV_SIZE), encryptedContentLen,
+										outBuffer, mCBOREncoder.getCurrentOffset(),
+										tempBuffer, (short)0, additionalDataLen,
+										tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS)) {
+			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+		}
+		updateCborHmac(outBuffer, mCBOREncoder.getCurrentOffset(), encryptedContentLen);
+		return (short) (mCBOREncoder.getCurrentOffset() + encryptedContentLen);
+	}
+
+	private short processFinishRetrieval(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength, byte[] outBuffer, short le, byte[] tempBuffer) {
+		//If P1P2 other than 0000 throw exception
+		if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
+			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+		}
+		byte returnCode = (short)1;
+		short digestToBeMacedSize = (short)0;
+		try {
+			if (!mStatus[mBuildCbor]) {
+				digestToBeMacedSize = 0;
+				returnCode = (short) 0;//Success
+				ISOException.throwIt(returnCode);
+			}
+
+			// This verifies that the correct expectedDeviceNamespacesSize value was
+			// passed in at eicPresentationCalcMacKey() time.
+			if (Util.arrayCompare(mIntCurrentCborSize, (short) 0, mIntExpectedCborSizeAtEnd, (short) 0, INT_SIZE) != (byte) 0) {
+				returnCode = (short) 1;//Failed
+				ISOException.throwIt(returnCode);
+			}
+			digestToBeMacedSize = mHmacSignature.sign(tempBuffer, (short) 0, (short) 0, tempBuffer, (short) 0);
+			returnCode = 0;
+		} catch (ISOException e) { }
+		mCBOREncoder.init(outBuffer, (short) 0, le);
+		mCBOREncoder.startArray((short)2);
+		mCBOREncoder.encodeUInt8(returnCode); //Success
+		mCBOREncoder.startArray((short)1);
+		mCBOREncoder.startByteString(digestToBeMacedSize);
+		if(digestToBeMacedSize > 0) {
+			mCBOREncoder.encodeRawData(tempBuffer, (short)0, digestToBeMacedSize);
+		}
 		return mCBOREncoder.getCurrentOffset();
 	}
 
