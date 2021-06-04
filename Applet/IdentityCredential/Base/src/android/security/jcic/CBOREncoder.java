@@ -68,7 +68,10 @@ public class CBOREncoder extends CBORBase{
      */
     public short startByteString(byte[] lenthBuff, short lenthBuffOff, byte lengthSize) {
     	byte encodeLengthByte = ENCODED_ONE_BYTE;
-    	switch(lengthSize) {
+    	byte additionalLength = ICUtil.calCborAdditionalLengthBytesFor(lenthBuff, lenthBuffOff, lengthSize);
+    	switch(additionalLength) {
+            case 0:
+                return encodeValue((byte) (TYPE_BYTE_STRING << 5), (short)(lenthBuff[lenthBuffOff + lengthSize - 1] & 0x00FF));
 	    	case 1:
 	    		encodeLengthByte = ENCODED_ONE_BYTE;
 	    		break;
@@ -85,7 +88,7 @@ public class CBOREncoder extends CBORBase{
     			ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
     	}
         writeRawByte((byte) ((TYPE_BYTE_STRING << 5) | encodeLengthByte));            
-        return (short) (writeRawByteArray(lenthBuff, lenthBuffOff, (short) lengthSize) + 1); 
+        return (short) (writeRawByteArray(lenthBuff, (short) (lenthBuffOff + lengthSize - additionalLength), additionalLength) + 1);
     }
 
     /**

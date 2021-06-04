@@ -95,6 +95,7 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 	            case ISO7816.INS_ICS_ADD_ENTRY_VALUE:
 	            case ISO7816.INS_ICS_FINISH_ADDING_ENTRIES:
 	            case ISO7816.INS_ICS_FINISH_GET_CREDENTIAL_DATA:
+                case ISO7816.INS_ICS_UPDATE_CREDENTIAL:
 	            	mProvisioning.processAPDU();
 	            	break;
                 case ISO7816.INS_ICS_PRESENTATION_INIT:
@@ -112,7 +113,6 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
                 case ISO7816.INS_ICS_GENERATE_SIGNING_KEY_PAIR:
                 case ISO7816.INS_ICS_PROVE_OWNERSHIP:
                 case ISO7816.INS_ICS_DELETE_CREDENTIAL:
-                case ISO7816.INS_ICS_UPDATE_CREDENTIAL:
                     mPresentation.processAPDU();
                     break;
 	            case ISO7816.INS_ICS_TEST_CBOR:

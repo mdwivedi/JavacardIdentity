@@ -327,24 +327,22 @@ public class ICUtil {
 
     public static byte calCborAdditionalLengthBytesFor(short size) {
         if (size < 24) {
-            return 0;
+            return (byte)0;
         } else if (size <= 0xff) {
-            return 1;
+            return BYTE_SIZE;
         }
-        return 2;
+        return SHORT_SIZE;
     }
 
     public static byte calCborAdditionalLengthBytesFor(byte[] valueBuff, short valueOffset, short valueSize) {
         if(valueSize <= 0 || valueSize > 8) {
             ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
-        if(valueSize == BYTE_SIZE) {
-            if (valueBuff[valueOffset] < 24) {
-                return 0;
-            } else if (valueBuff[valueOffset] <= 0xff) {
-                return 1;
-            }
+        byte i = 0;
+        for (; valueBuff[valueOffset + i] == 0x0 && i < valueSize; i++);
+        if(i > 0) {
+            valueSize = (short) (valueSize - i);
         }
-        return (byte) valueSize;
+        return  valueSize > INT_SIZE ? LONG_SIZE : valueSize > SHORT_SIZE ? INT_SIZE : valueSize > BYTE_SIZE ? SHORT_SIZE : (short)(valueBuff[(short)(valueOffset + i)] & 0x00FF) > (short)24 ? BYTE_SIZE : (byte)0;
     }
 }

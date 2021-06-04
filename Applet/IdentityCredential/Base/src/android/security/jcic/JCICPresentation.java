@@ -189,8 +189,8 @@ final class JCICPresentation {
 						outBuffer, le, tempBuffer);
 				break;
 			case ISO7816.INS_ICS_DELETE_CREDENTIAL:
-				break;
-			case ISO7816.INS_ICS_UPDATE_CREDENTIAL:
+				outGoingLength = processDeleteCredential(receiveBuffer, receivingDataOffset, receivingDataLength,
+						outBuffer, le, tempBuffer);
 				break;
 			default:
 				ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
@@ -588,10 +588,10 @@ final class JCICPresentation {
 		// However this involves calculating the MAC which requires access to the to
 		// a pre-shared key which we don't have...
 		//
-		return true;
-/*TODO need to remove comment after making sure vts passes with this change. Default implementation does not have this implementation.
+		if (mCryptoManager.getStatusFlag(CryptoManager.FLAG_TEST_CREDENTIAL)) {
+			return true;
+		}
 		//TODO this need to revisit, currently hardcoded pre-shared key is used which need to get from provision or keymaster.
-
 		mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
 		mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
 		short totalLen = 0;
@@ -618,7 +618,7 @@ final class JCICPresentation {
 				preSharedKey, (short)0, (short)preSharedKey.length, //pre-shared key
 				tempBuffer, tempBufferOffset, totalLen, //data
 				tempBuffer, macOffset, macLen); //mac
-*/
+
 	}
 
 	private short processValidateAccessControlProfile(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
@@ -669,7 +669,6 @@ final class JCICPresentation {
 				tempBuffer, secureUserIdOffset, tempBuffer, freeOffset);
 		boolean passedReaderAuth = checkReaderAuth(tempBuffer, readerCertOffset, readerCertLen, tempBuffer, freeOffset);
 
-		//TODO is this correct implementation?
 		mAcpMasksInts[mAccessControlProfileMaskValidatedOffset + (INT_SIZE - (id / (short)8)) - 1] |= ((short)1 << (id % (short)8));
 		if(readerCertLen > 0) {
 			mAcpMasksInts[mAccessControlProfileMaskUsesReaderAuthOffset + (INT_SIZE - (id / (short)8)) - 1] |= ((short)1 << (id % (short)8));
@@ -940,7 +939,6 @@ final class JCICPresentation {
 		short derivedKeyLen = mCryptoManager.hkdf(tempBuffer, sharedSecretOffset, sharedSecretLen, tempBuffer, saltOffset, saltLen,
 								EMAC_KEY_INFO, (short)0, (short)EMAC_KEY_INFO.length, tempBuffer, derivedKeyOffset, expectedKeySize);
 
-		short tempBuffFreeOffset = (short)(derivedKeyOffset + derivedKeyLen);
 		mCBOREncoder.init(outBuffer, (short) 0, le);
 		mHmacKey.setKey(tempBuffer, derivedKeyOffset, derivedKeyLen);
 		mHmacSignature.init(mHmacKey, Signature.MODE_SIGN);
@@ -985,40 +983,48 @@ final class JCICPresentation {
 		//
 		// which is easily calculated below
 		//
-		short calculatedSize = 0;
-		calculatedSize += 1;  // Array of size 4
-		calculatedSize += 1;  // "DeviceAuthentication" less than 24 bytes
-		calculatedSize += (short)STR_DEVICE_AUTHENTICATION.length;  // Don't include trailing NUL
-		calculatedSize += sessionTranscriptLen;               // Already CBOR encoded
-		calculatedSize += 1 + ICUtil.calCborAdditionalLengthBytesFor(docTypeLen) + docTypeLen;
-		calculatedSize += 2;  // Semantic tag EIC_CBOR_SEMANTIC_TAG_ENCODED_CBOR (24)
+		short calculatedSizeOffset = (short)(derivedKeyOffset + derivedKeyLen);
+		Util.arrayFillNonAtomic(tempBuffer, calculatedSizeOffset, (short)(INT_SIZE + SHORT_SIZE), (byte)0);
+		/* calculatedSize += (byte)1; // Array of size 4
+		 * calculatedSize += 1;  // "DeviceAuthentication" less than 24 bytes
+		 * calculatedSize += (byte)STR_DEVICE_AUTHENTICATION.length;  // Don't include trailing NUL
+		 */
+		Util.setShort(tempBuffer, (short)(calculatedSizeOffset + INT_SIZE), (short)(1 + 1 + (byte)STR_DEVICE_AUTHENTICATION.length + sessionTranscriptLen));
+		ICUtil.incrementByteArray(tempBuffer, calculatedSizeOffset, INT_SIZE, tempBuffer, (short)(calculatedSizeOffset + INT_SIZE), SHORT_SIZE);
 
-		calculatedSize += 1 + ICUtil.calCborAdditionalLengthBytesFor(tempBuffer, expectedDeviceNamespacesSizeOffset, expectedDeviceNamespacesSizeLen);
-		if(expectedDeviceNamespacesSizeLen == BYTE_SIZE) {
-			calculatedSize += tempBuffer[expectedDeviceNamespacesSizeOffset];
-		} else if(expectedDeviceNamespacesSizeLen == SHORT_SIZE) {
-			calculatedSize += Util.getShort(tempBuffer, expectedDeviceNamespacesSizeOffset);
-		} else {
-			//TODO if expectedDeviceNamespaceSize could be greater than short value we need to defile calculatedSize as integer or long also
-			/*Util.arrayFillNonAtomic(tempBuffer, tempBuffFreeOffset, expectedDeviceNamespacesSizeLen, (byte)0);
-			 *ICUtil.incrementByteArray(tempBuffer, tempBuffFreeOffset, expectedDeviceNamespacesSizeLen, tempBuffer, expectedDeviceNamespacesSizeOffset, expectedDeviceNamespacesSizeLen);
-			 *ICUtil.incrementByteArray(tempBuffer, tempBuffFreeOffset, expectedDeviceNamespacesSizeLen, tempBuffer, calculatedSizeOffset, calculatedSizeLen);
-			 */
-		}
+		Util.arrayFillNonAtomic(tempBuffer, (short) (calculatedSizeOffset + INT_SIZE), SHORT_SIZE, (byte)0);
+		/* calculatedSize += 1 + ICUtil.calCborAdditionalLengthBytesFor(docTypeLen) + docTypeLen; // Already CBOR encoded
+		 * calculatedSize += 2;  // Semantic tag EIC_CBOR_SEMANTIC_TAG_ENCODED_CBOR (24)
+		 * calculatedSize += 1 + ICUtil.calCborAdditionalLengthBytesFor(tempBuffer, expectedDeviceNamespacesSizeOffset, expectedDeviceNamespacesSizeLen);
+		 */
+		short intermediateSize = (short)(1 + ICUtil.calCborAdditionalLengthBytesFor(docTypeLen) + docTypeLen + 2 + 1 + ICUtil.calCborAdditionalLengthBytesFor(tempBuffer, expectedDeviceNamespacesSizeOffset, expectedDeviceNamespacesSizeLen));
+		Util.setShort(tempBuffer, (short)(calculatedSizeOffset + INT_SIZE), intermediateSize);
+		ICUtil.incrementByteArray(tempBuffer, calculatedSizeOffset, INT_SIZE, tempBuffer, (short)(calculatedSizeOffset + INT_SIZE), SHORT_SIZE);
+
+		/* calculatedSize += 1 + ICUtil.calCborAdditionalLengthBytesFor(tempBuffer, expectedDeviceNamespacesSizeOffset, expectedDeviceNamespacesSizeLen);
+		 */
+		ICUtil.incrementByteArray(tempBuffer, calculatedSizeOffset, INT_SIZE, tempBuffer, expectedDeviceNamespacesSizeOffset, expectedDeviceNamespacesSizeLen);
 
 		// However note that we're authenticating DeviceAuthenticationBytes which
 		// is a tagged bstr of the bytes of DeviceAuthentication. So need to get
 		// that in front.
-		short dabCalculatedSize = 0;
-		dabCalculatedSize += 2;  // Semantic tag EIC_CBOR_SEMANTIC_TAG_ENCODED_CBOR (24)
-		dabCalculatedSize += 1 + ICUtil.calCborAdditionalLengthBytesFor(calculatedSize);
-		dabCalculatedSize += calculatedSize;
+		short dabCalculatedSizeOffset = (short)(calculatedSizeOffset + INT_SIZE);
+		Util.arrayFillNonAtomic(tempBuffer, dabCalculatedSizeOffset, (short)(INT_SIZE + SHORT_SIZE), (byte)0);
+		/*dabCalculatedSize += 2;  // Semantic tag EIC_CBOR_SEMANTIC_TAG_ENCODED_CBOR (24)
+		 *dabCalculatedSize += 1 + ICUtil.calCborAdditionalLengthBytesFor(calculatedSize);
+		 */
+		intermediateSize = (short)(2 + 1 + ICUtil.calCborAdditionalLengthBytesFor(tempBuffer, calculatedSizeOffset, INT_SIZE));
+		Util.setShort(tempBuffer, (short)(dabCalculatedSizeOffset + INT_SIZE), intermediateSize);
+		ICUtil.incrementByteArray(tempBuffer, dabCalculatedSizeOffset, INT_SIZE, tempBuffer, (short)(dabCalculatedSizeOffset + INT_SIZE), SHORT_SIZE);
+		/*dabCalculatedSize += calculatedSize;
+		 */
+		ICUtil.incrementByteArray(tempBuffer, dabCalculatedSizeOffset, INT_SIZE, tempBuffer, calculatedSizeOffset,  INT_SIZE);
 
 		// Begin the bytestring for DeviceAuthenticationBytes;
-		mCBOREncoder.startArray(dabCalculatedSize);
+		mCBOREncoder.startByteString(tempBuffer, dabCalculatedSizeOffset, INT_SIZE);
 		mCBOREncoder.encodeTag(CBOR_SEMANTIC_TAG_ENCODED_CBOR);
 		// Begins the bytestring for DeviceAuthentication;
-		mCBOREncoder.startByteString(calculatedSize);
+		mCBOREncoder.startByteString(tempBuffer, calculatedSizeOffset, INT_SIZE);
 
 		mCBOREncoder.startArray((short)4);
 		mCBOREncoder.encodeTextString(STR_DEVICE_AUTHENTICATION, (short)0, (short)STR_DEVICE_AUTHENTICATION.length);
@@ -1034,6 +1040,8 @@ final class JCICPresentation {
 		Util.arrayFillNonAtomic(mIntExpectedCborSizeAtEnd, (short)0, INT_SIZE, (byte)0);
 		Util.arrayFillNonAtomic(mIntCurrentCborSize, (short)0, INT_SIZE, (byte)0);
 
+
+		short tempBuffFreeOffset = (short)(dabCalculatedSizeOffset + INT_SIZE);
 		Util.arrayCopyNonAtomic(tempBuffer, expectedDeviceNamespacesSizeOffset, mIntExpectedCborSizeAtEnd, (short)(INT_SIZE - expectedDeviceNamespacesSizeLen), expectedDeviceNamespacesSizeLen);
 		Util.setShort(tempBuffer, tempBuffFreeOffset, mCBOREncoder.getCurrentOffset());
 		ICUtil.incrementByteArray(mIntExpectedCborSizeAtEnd, (short)0, INT_SIZE, tempBuffer, tempBuffFreeOffset, SHORT_SIZE);
@@ -1045,6 +1053,7 @@ final class JCICPresentation {
 		} else {
 			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
 		}
+
 		updateCborHmac(outBuffer, (short)0, mCBOREncoder.getCurrentOffset());
 
 		mCBOREncoder.init(outBuffer, (short) 0, le);
@@ -1214,8 +1223,8 @@ final class JCICPresentation {
 				returnCode = (short) 1;//Failed
 				ISOException.throwIt(returnCode);
 			}
-			digestToBeMacedSize = mHmacSignature.sign(tempBuffer, (short) 0, (short) 0, tempBuffer, (short) 0);
 			returnCode = 0;
+			digestToBeMacedSize = mHmacSignature.sign(tempBuffer, (short) 0, (short) 0, tempBuffer, (short) 0);
 		} catch (ISOException e) { }
 		mCBOREncoder.init(outBuffer, (short) 0, le);
 		mCBOREncoder.startArray((short)2);
@@ -1225,6 +1234,84 @@ final class JCICPresentation {
 		if(digestToBeMacedSize > 0) {
 			mCBOREncoder.encodeRawData(tempBuffer, (short)0, digestToBeMacedSize);
 		}
+		return mCBOREncoder.getCurrentOffset();
+	}
+
+	private short processDeleteCredential(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
+										  byte[] outBuffer, short le, byte[] tempBuffer) {
+		//If P1P2 other than 0000 throw exception
+		if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
+			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+		}
+
+		mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
+		short argsLen = mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+		short docTypeOffset = (short)0;
+		short docTypeLen = mCBORDecoder.readByteString(tempBuffer, docTypeOffset);
+		short challengeOffset = (short)-1;
+		short challengeLen = (short)0;
+		short proofOfDeletionChorSizeOffset;
+		if(argsLen > 2) {
+			challengeOffset = (short) (docTypeOffset + docTypeLen);
+			challengeLen = mCBORDecoder.readByteString(tempBuffer, challengeOffset);
+			proofOfDeletionChorSizeOffset = (short)(challengeOffset + challengeLen);
+		} else {
+			proofOfDeletionChorSizeOffset = (short)(docTypeOffset + docTypeLen);
+		}
+		short proofOfDeletionCborSizeLen = ICUtil.readUint(mCBORDecoder, tempBuffer, proofOfDeletionChorSizeOffset);
+
+		short coseTBSOffset = (short) (proofOfDeletionChorSizeOffset + proofOfDeletionCborSizeLen);
+		mCBOREncoder.init(tempBuffer, coseTBSOffset, CryptoManager.TEMP_BUFFER_SIZE);
+
+		// What we're going to sign is the COSE ToBeSigned structure which
+		// looks like the following:
+		//
+		// Sig_structure = [
+		//   context : "Signature" / "Signature1" / "CounterSignature",
+		//   body_protected : empty_or_serialized_map,
+		//   ? sign_protected : empty_or_serialized_map,
+		//   external_aad : bstr,
+		//   payload : bstr
+		//  ]
+		//
+		mCBOREncoder.startArray((short)4);
+		mCBOREncoder.encodeTextString(STR_SIGNATURE1, (short)0, (short)STR_SIGNATURE1.length);
+
+		// The COSE Encoded protected headers is just a single field with
+		// COSE_LABEL_ALG (1) -> COSE_ALG_ECSDA_256 (-7). For simplicitly we just
+		// hard-code the CBOR encoding:
+		mCBOREncoder.encodeByteString(COSE_ENCODED_PROTECTED_HEADERS_ECDSA, (short)0, (short)COSE_ENCODED_PROTECTED_HEADERS_ECDSA.length);
+
+		// We currently don't support Externally Supplied Data (RFC 8152 section 4.3)
+		// so external_aad is the empty bstr
+		mCBOREncoder.encodeByteString(tempBuffer, (short)0, (short)0);
+
+		// For the payload, the _encoded_ form follows here. We handle this by simply
+		// opening a bstr, and then writing the CBOR. This requires us to know the
+		// size of said bstr, ahead of time.
+		mCBOREncoder.startByteString(tempBuffer, proofOfDeletionChorSizeOffset, (byte)proofOfDeletionCborSizeLen);
+
+		// Finally, the CBOR that we're actually signing.
+		mCBOREncoder.startArray(challengeLen > 0 ? (byte)4 : (byte)3);
+		mCBOREncoder.encodeTextString(STR_PROOF_OF_DELETION, (byte)0, (short)STR_PROOF_OF_DELETION.length);
+		mCBOREncoder.encodeTextString(tempBuffer, docTypeOffset, docTypeLen);
+		if(challengeLen > 0) {
+			mCBOREncoder.encodeByteString(tempBuffer, challengeOffset, challengeLen);
+		}
+		mCBOREncoder.encodeBoolean(mCryptoManager.getStatusFlag(CryptoManager.FLAG_TEST_CREDENTIAL));
+
+		short digestOffset = mCBOREncoder.getCurrentOffset();
+		mDigest.reset();
+		short digestLen = mDigest.doFinal(tempBuffer, coseTBSOffset, (short)(mCBOREncoder.getCurrentOffset() - coseTBSOffset),
+				tempBuffer, digestOffset);
+		short signatureOffset = (short)(digestOffset + digestLen);
+		short signatureLen = mCryptoManager.ecSignWithNoDigest(tempBuffer, digestOffset, tempBuffer, signatureOffset);
+
+		mCBOREncoder.init(outBuffer, (short) 0, le);
+		mCBOREncoder.startArray((short)2);
+		mCBOREncoder.encodeUInt8((byte)0); //Success
+		mCBOREncoder.startArray((short)1);
+		mCBOREncoder.encodeByteString(tempBuffer, signatureOffset, signatureLen);
 		return mCBOREncoder.getCurrentOffset();
 	}
 

@@ -249,7 +249,7 @@ public class CryptoProviderImpl implements ICryptoProvider{
 		if(cert[signSeqStart] != 0x03 && cert[(short)(signSeqStart + (byte)2)] != 0x00) {
 			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
 		}
-		byte signLen = (byte)(cert[signSeqStart + (byte)1] - (byte)2);//Actual signature Bit string starts after 0x00. signature len expected around 70-72
+		byte signLen = (byte)(cert[signSeqStart + (byte)1] - (byte)1);//Actual signature Bit string starts after 0x00. signature len expected around 70-72
 		return ecVerify(sunSignerWithSha256, pubKey, pubKeyOffset, pubKeyLen,
 				cert, tbsStart, tbsLen,
 				cert, (short) (certOffset + certLen - signLen), signLen);

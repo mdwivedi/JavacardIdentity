@@ -120,6 +120,20 @@ final class JCICProvisioning {
 	        case ISO7816.INS_ICS_FINISH_GET_CREDENTIAL_DATA:
 	        	processFinishGetCredentialData();
 	            break;
+            case ISO7816.INS_ICS_UPDATE_CREDENTIAL:
+                mAPDUManager.receiveAll();
+                byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
+                short receivingDataOffset = mAPDUManager.getOffsetIncomingData();
+                short receivingDataLength = mAPDUManager.getReceivingLength();
+                short le = mAPDUManager.setOutgoing(true);
+                byte[] outBuffer = mAPDUManager.getSendBuffer();
+                byte[] tempBuffer = mCryptoManager.getTempBuffer();
+                short outGoingLength = (short)0;
+
+                outGoingLength = processUpdateCredential(receiveBuffer, receivingDataOffset, receivingDataLength,
+                        outBuffer, le, tempBuffer);
+                mAPDUManager.setOutgoingLength(outGoingLength);
+                break;
 	        default: 
 	            ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
         }
@@ -139,9 +153,11 @@ final class JCICProvisioning {
 
         mCryptoManager.createCredentialStorageKey(isTestCredential);
 
-        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENIAL_PERSONALIZATION_STATE, false);
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE, false);
         // Credential keys are loaded
-        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENIAL_KEYS_INITIALIZED, true);
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_KEYS_INITIALIZED, true);
+
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_UPDATE_CREDENTIAL, false);
 
         short le = mAPDUManager.setOutgoing();
         byte[] outBuffer = mAPDUManager.getSendBuffer();
@@ -151,6 +167,94 @@ final class JCICProvisioning {
         mAPDUManager.setOutgoingLength(mCBOREncoder.getCurrentOffset());
     }
 
+    private short processUpdateCredential(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
+                                          byte[] outBuffer, short le, byte[] tempBuffer) {
+
+        //If P1P2 other than 0000 throw exception
+        if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
+            ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+        }
+        reset();
+        mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
+        mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+        boolean isTestCredential = mCBORDecoder.readBoolean();
+        short docTypeOffset = (short)0;
+        short docTypeLen = mCBORDecoder.readByteString(tempBuffer, docTypeOffset);
+        short encryptedCredentialKeyOffset = (short)(docTypeOffset + docTypeLen);
+        short encryptedCredentialKeysSize = mCBORDecoder.readByteString(tempBuffer, encryptedCredentialKeyOffset);
+
+        // For feature version 202009 it's 52 bytes long and for feature version 202101 it's 86
+        // bytes (the additional data is the ProofOfProvisioning SHA-256). We need
+        // to support loading all feature versions.
+        //
+        boolean expectPopSha256 = false;
+        if(encryptedCredentialKeysSize == (short)(52 + 28)) {
+
+        } else if (encryptedCredentialKeysSize == (short)(86 + 28)) {
+            expectPopSha256 = true;
+        } else {
+            ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+        }
+
+        short outDataOffset = (short)(encryptedCredentialKeyOffset + encryptedCredentialKeysSize);
+        //encrypted data is in format {nonce|encryptedKeys|tag}
+        if(!mCryptoManager.decryptCredentialData(isTestCredential,
+                tempBuffer, (short)(encryptedCredentialKeyOffset + CryptoManager.AES_GCM_IV_SIZE), (short)(encryptedCredentialKeysSize - (CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE)),
+                tempBuffer, outDataOffset,
+                tempBuffer, encryptedCredentialKeyOffset, CryptoManager.AES_GCM_IV_SIZE,
+                tempBuffer, docTypeOffset, docTypeLen,
+                tempBuffer, (short)(encryptedCredentialKeyOffset + encryptedCredentialKeysSize - CryptoManager.AES_GCM_TAG_SIZE), CryptoManager.AES_GCM_TAG_SIZE)) {
+            ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+        }
+
+
+        // It's supposed to look like this;
+        //
+        // Feature version 202009:
+        //
+        //         CredentialKeys = [
+        //              bstr,   ; storageKey, a 128-bit AES key
+        //              bstr,   ; credentialPrivKey, the private key for credentialKey
+        //         ]
+        //
+        // Feature version 202101:
+        //
+        //         CredentialKeys = [
+        //              bstr,   ; storageKey, a 128-bit AES key
+        //              bstr,   ; credentialPrivKey, the private key for credentialKey
+        //              bstr    ; proofOfProvisioning SHA-256
+        //         ]
+        //
+        // where storageKey is 16 bytes, credentialPrivateKey is 32 bytes, and proofOfProvisioning
+        // SHA-256 is 32 bytes.
+        //
+        if (tempBuffer[outDataOffset] != (byte)(expectPopSha256 ? 0x83 : 0x82) ||  // array of two or three elements
+                tempBuffer[(short)(outDataOffset + (short)1)] != 0x50 ||                             // 16-byte bstr
+                tempBuffer[(short)(outDataOffset + (short)18)] != 0x58 || tempBuffer[(short)(outDataOffset + (short)19)] != 0x20) {  // 32-byte bstr
+            ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+        }
+        if (expectPopSha256) {
+            if (tempBuffer[(short)(outDataOffset + (short)52)] != 0x58 || tempBuffer[(short)(outDataOffset + (short)53)] != 0x20) {  // 32-byte bstr
+                ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+            }
+        }
+
+        mCryptoManager.setCredentialStorageKey(tempBuffer, (short)(outDataOffset + 2));
+        mCryptoManager.setCredentialEcKey(tempBuffer, (short)(outDataOffset + 20));
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_TEST_CREDENTIAL, isTestCredential);
+        // Note: We don't care about the previous ProofOfProvisioning SHA-256
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_UPDATE_CREDENTIAL, true);
+
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE, false);
+        // Credential keys are loaded
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_KEYS_INITIALIZED, true);
+
+        mCBOREncoder.init(outBuffer, (short) 0, le);
+        mCBOREncoder.startArray((short)1);
+        mCBOREncoder.encodeUInt8((byte)0); //Success
+        return mCBOREncoder.getCurrentOffset();
+    }
+
 	private void processCreateCredentialKey() {
         byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
         byte[] tempBuffer = mCryptoManager.getTempBuffer();
@@ -158,6 +262,10 @@ final class JCICProvisioning {
         //If P1P2 other than 0000 and 0001 throw exception
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+        }
+
+        if(mCryptoManager.getStatusFlag(CryptoManager.FLAG_UPDATE_CREDENTIAL)) {
+            ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
 
         mCryptoManager.createEcKeyPairAndAttestation(mCryptoManager.getStatusFlag(CryptoManager.FLAG_TEST_CREDENTIAL));
@@ -175,7 +283,7 @@ final class JCICProvisioning {
 	
 	private void processStartPersonalization() {
         mCryptoManager.assertCredentialInitialized();
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENIAL_PERSONALIZATION_STATE);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE);
         byte[] tempBuffer = mCryptoManager.getTempBuffer();
         byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
 
@@ -280,7 +388,7 @@ final class JCICProvisioning {
         
         mAPDUManager.setOutgoingLength((short)MessageDigest.LENGTH_SHA_256);*/
         // Set the Applet in the PERSONALIZATION state
-        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENIAL_PERSONALIZATION_STATE, true);
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE, true);
 
         mCBOREncoder.reset();
         mCBOREncoder.init(outBuffer, (short) 0, le);
@@ -291,7 +399,7 @@ final class JCICProvisioning {
 
 	private void processAddAccessControlProfile() {
         mCryptoManager.assertInPersonalizationState();
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENIAL_PERSONALIZING_ENTRIES);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZING_ENTRIES);
         byte[] tempBuffer = mCryptoManager.getTempBuffer();
 
         byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
@@ -331,7 +439,7 @@ final class JCICProvisioning {
 
 	private void processBeginAddEntry() {
         mCryptoManager.assertInPersonalizationState();
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENIAL_PERSONALIZING_ENTRIES);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZING_ENTRIES);
         byte[] tempBuffer = mCryptoManager.getTempBuffer();
 
         byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
@@ -408,7 +516,7 @@ final class JCICProvisioning {
 
 	private void processAddEntryValue() {
         mCryptoManager.assertInPersonalizationState();
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENIAL_PERSONALIZING_PROFILES);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZING_PROFILES);
         byte[] tempBuffer = mCryptoManager.getTempBuffer();
 
         byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
@@ -492,7 +600,7 @@ final class JCICProvisioning {
 
 	private void processFinishAddingEntries() {
         mCryptoManager.assertInPersonalizationState();
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENIAL_PERSONALIZING_PROFILES);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZING_PROFILES);
         byte[] tempBuffer = mCryptoManager.getTempBuffer();
 
         byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
