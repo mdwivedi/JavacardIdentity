@@ -15,8 +15,6 @@
  */
 
 #define LOG_TAG "JCSecureHardwareProxy"
-#define ENABLE_JAVA_CARD_PROVISIONING 1
-#define ENABLE_JAVA_CARD_PRESENTATION 1
 
 #include <android/hardware/identity/support/IdentityCredentialSupport.h>
 
@@ -43,14 +41,10 @@
 #include <openssl/x509.h>
 #include <openssl/x509_vfy.h>
 
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
 #include <cppbor/cppbor.h>
 #include <cppbor/cppbor_parse.h>
 #include "AppletConnection.h"
 #include <cmath>
-#else
-#include <libeic.h>
-#endif
 
 #include "JCSecureHardwareProxy.h"
 
@@ -63,7 +57,6 @@ using ::std::vector;
 
 namespace android::hardware::identity {
 // ----------------------------------------------------------------------
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
 void printByteArray(const uint8_t* byteBuffer, size_t size) {
 
     char outBuff[(256 * 2) + 1];
@@ -86,7 +79,6 @@ void printByteArray(const uint8_t* byteBuffer, size_t size) {
     ALOG("%s", outBuff);
 
 }
-#endif
 
 JCSecureHardwareProxy::JCSecureHardwareProxy() {}
 
@@ -97,7 +89,6 @@ JCSecureHardwareProxy::~JCSecureHardwareProxy() {
 bool JCSecureHardwareProxy::getHardwareInfo(string* storeName, string* storeAuthorName,
                                  int32_t* gcmChunkSize, bool* isDirectAccess, vector<string>* supportedDocTypes) {
     LOG(INFO) << "JCSecureHardwareProxy getHardwareInfo";
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
     if (!mAppletConnection.connectToTransportClient()) {
         return false;
     }
@@ -116,7 +107,6 @@ bool JCSecureHardwareProxy::getHardwareInfo(string* storeName, string* storeAuth
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return false;
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -166,9 +156,6 @@ bool JCSecureHardwareProxy::getHardwareInfo(string* storeName, string* storeAuth
     }
 
     return true;
-#else
-    return false;
-#endif
 }
 
 JCSecureHardwareProvisioningProxy::JCSecureHardwareProvisioningProxy() {}
@@ -184,9 +171,7 @@ bool JCSecureHardwareProvisioningProxy::shutdown() {
 }
 
 bool JCSecureHardwareProvisioningProxy::initialize(bool testCredential) {
-    LOG(INFO) << "JCSecureHardwareProvisioningProxy created, sizeof(EicProvisioning): "
-              << sizeof(EicProvisioning);
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
+    LOG(INFO) << "JCSecureHardwareProvisioningProxy created";
 	isTestCredential = testCredential;
     if (!mAppletConnection.connectToTransportClient()) {
         return false;
@@ -207,7 +192,6 @@ bool JCSecureHardwareProvisioningProxy::initialize(bool testCredential) {
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return false;
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -230,27 +214,67 @@ bool JCSecureHardwareProvisioningProxy::initialize(bool testCredential) {
         return false;
     }
     return true;
-#else
-    return eicProvisioningInit(&ctx_, testCredential);
-#endif
 }
 
 bool JCSecureHardwareProvisioningProxy::initializeForUpdate(
         bool testCredential, string docType, vector<uint8_t> encryptedCredentialKeys) {
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
+    LOG(INFO) << "JCSecureHardwareProvisioningProxy initializeForUpdate called";
+    cppbor::Array pArray;
+    pArray.add(testCredential)
+			.add(docType)
+            .add(encryptedCredentialKeys);
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    if (!mAppletConnection.connectToTransportClient()) {
+		LOG(INFO) << "JCSecureHardwareProvisioningProxy initializeForUpdate connectToTransportClient failed";
         return false;
-#else
-    return eicProvisioningInitForUpdate(&ctx_, testCredential, docType.c_str(),
-                                        encryptedCredentialKeys.data(),
-                                        encryptedCredentialKeys.size());
-#endif
+    }
+
+    // Initiate communication to applet
+    if (!mAppletConnection.isChannelOpen()) {
+        ResponseApdu selectResponse = mAppletConnection.openChannelToApplet();
+        if (!selectResponse.ok() || selectResponse.status() != AppletConnection::SW_OK) {
+			LOG(INFO) << "JCSecureHardwareProvisioningProxy initializeForUpdate openChannelToApplet failed";
+            return false;
+        }
+    }
+
+    // Send the command to the applet to create a new credential
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_UPDATE_CREDENTIAL, 0,
+                        0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
+        return false;
+    }
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_UPDATE_CREDENTIAL response is not valid CBOR: " << message;
+        return false;
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 1) {
+        LOG(ERROR) << "INS_ICS_UPDATE_CREDENTIAL response is not an array with one elements";
+        return false;
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_UPDATE_CREDENTIAL response is not success";
+        return false;
+    }
+    return true;
 }
 
 // Returns public key certificate.
 optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::createCredentialKey(
         const vector<uint8_t>& challenge, const vector<uint8_t>& applicationId) {
     LOG(INFO) << "JCSecureHardwareProvisioningProxy createCredentialKey ";
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
 
     // Send the command to the applet to create a new credential
     CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_CREATE_CREDENTIAL_KEY, 0, 0};
@@ -258,7 +282,6 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::createCredentialKey
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -293,18 +316,6 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::createCredentialKey
     printByteArray(pubKeyCert.data(), pubKeyCert.size());
 
     return pubKeyCert;
-#else
-    uint8_t publicKeyCert[4096];
-    size_t publicKeyCertSize = sizeof publicKeyCert;
-    if (!eicProvisioningCreateCredentialKey(&ctx_, challenge.data(), challenge.size(),
-                                            applicationId.data(), applicationId.size(),
-                                            publicKeyCert, &publicKeyCertSize)) {
-        return {};
-    }
-    vector<uint8_t> pubKeyCert(publicKeyCertSize);
-    memcpy(pubKeyCert.data(), publicKeyCert, publicKeyCertSize);
-    return pubKeyCert;
-#endif
 }
 
 bool JCSecureHardwareProvisioningProxy::startPersonalization(
@@ -312,7 +323,6 @@ bool JCSecureHardwareProvisioningProxy::startPersonalization(
         size_t expectedProofOfProvisioningSize) {
     LOG(INFO) << "JJCSecureHardwareProvisioningProxy::startPersonalization ";
 
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
     cppbor::Array pArray;
     cppbor::Array entryCountArray;
     for (auto id : entryCounts) {
@@ -332,7 +342,6 @@ bool JCSecureHardwareProvisioningProxy::startPersonalization(
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return false;
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -355,15 +364,6 @@ bool JCSecureHardwareProvisioningProxy::startPersonalization(
         return false;
     }
     return true;
-#else
-
-    if (!eicProvisioningStartPersonalization(&ctx_, accessControlProfileCount, entryCounts.data(),
-                                             entryCounts.size(), docType.c_str(),
-                                             expectedProofOfProvisioningSize)) {
-        return false;
-    }
-    return true;
-#endif
 }
 
 // Returns MAC (28 bytes).
@@ -371,7 +371,6 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::addAccessControlPro
         int id, const vector<uint8_t>& readerCertificate, bool userAuthenticationRequired,
         uint64_t timeoutMillis, uint64_t secureUserId) {
 
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
     LOG(INFO) << "JJCSecureHardwareProvisioningProxy::addAccessControlProfile ";
 
     cppbor::Array pArray;
@@ -390,7 +389,6 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::addAccessControlPro
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -421,21 +419,11 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::addAccessControlPro
     }
 
     return mac;
-#else
-    vector<uint8_t> mac(28);
-    if (!eicProvisioningAddAccessControlProfile(
-                &ctx_, id, readerCertificate.data(), readerCertificate.size(),
-                userAuthenticationRequired, timeoutMillis, secureUserId, mac.data())) {
-        return {};
-    }
-    return mac;
-#endif
 }
 
 bool JCSecureHardwareProvisioningProxy::beginAddEntry(const vector<int>& accessControlProfileIds,
                                                         const string& nameSpace, const string& name,
                                                         uint64_t entrySize) {
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
     LOG(INFO) << "JJCSecureHardwareProvisioningProxy::beginAddEntry ";
 
     cppbor::Array cborProfileIDs;
@@ -458,7 +446,6 @@ bool JCSecureHardwareProvisioningProxy::beginAddEntry(const vector<int>& accessC
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return false;
     }
 
@@ -482,19 +469,12 @@ bool JCSecureHardwareProvisioningProxy::beginAddEntry(const vector<int>& accessC
         return false;
     }
     return true;
-#else
-    uint8_t scratchSpace[512];
-    return eicProvisioningBeginAddEntry(&ctx_, accessControlProfileIds.data(),
-                                        accessControlProfileIds.size(), nameSpace.c_str(),
-                                        name.c_str(), entrySize, scratchSpace, sizeof scratchSpace);
-#endif
 }
 
 // Returns encryptedContent.
 optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::addEntryValue(
         const vector<int>& accessControlProfileIds, const string& nameSpace, const string& name,
         const vector<uint8_t>& content) {
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
     LOG(INFO) << "JJCSecureHardwareProvisioningProxy::addEntryValue ";
 
     cppbor::Array cborProfileIDs;
@@ -518,7 +498,6 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::addEntryValue(
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -549,24 +528,11 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::addEntryValue(
     }
 
     return encryptedContent;
-#else
-    vector<uint8_t> eicEncryptedContent;
-    uint8_t scratchSpace[512];
-    eicEncryptedContent.resize(content.size() + 28);
-    if (!eicProvisioningAddEntryValue(
-                &ctx_, accessControlProfileIds.data(), accessControlProfileIds.size(),
-                nameSpace.c_str(), name.c_str(), content.data(), content.size(),
-                eicEncryptedContent.data(), scratchSpace, sizeof scratchSpace)) {
-        return {};
-    }
-    return eicEncryptedContent;
-#endif
 }
 
-// Returns signatureOfToBeSigned (EIC_ECDSA_P256_SIGNATURE_SIZE bytes).
+// Returns signatureOfToBeSigned (JCIC_ECDSA_P256_SIGNATURE_SIZE bytes).
 optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::finishAddingEntries() {
-    vector<uint8_t> signatureOfToBeSigned(EIC_ECDSA_P256_SIGNATURE_SIZE);
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
+    vector<uint8_t> signatureOfToBeSigned(JCIC_ECDSA_P256_SIGNATURE_SIZE);
     LOG(INFO) << "JJCSecureHardwareProvisioningProxy::finishAddingEntries ";
 
     CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_FINISH_ADDING_ENTRIES, 0,
@@ -575,7 +541,6 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::finishAddingEntries
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -617,19 +582,12 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::finishAddingEntries
         LOG(ERROR) << "INS_ICS_FINISH_ADDING_ENTRIES Error encoding s";
         return {};
     }
-
-#else
-    if (!eicProvisioningFinishAddingEntries(&ctx_, signatureOfToBeSigned.data())) {
-        return {};
-    }
-#endif
     return signatureOfToBeSigned;
 }
 
 // Returns encryptedCredentialKeys.
 optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::finishGetCredentialData(
         const string& docType) {
-#ifdef ENABLE_JAVA_CARD_PROVISIONING
     LOG(INFO) << "JJCSecureHardwareProvisioningProxy::finishGetCredentialData ";
     cppbor::Array pArray;
     pArray.add(docType);
@@ -642,7 +600,6 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::finishGetCredential
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -669,16 +626,6 @@ optional<vector<uint8_t>> JCSecureHardwareProvisioningProxy::finishGetCredential
     const vector<uint8_t> encryptedCredentialKeys = encryptedCredentialKeysBstr->value();
 
     return encryptedCredentialKeys;
-#else
-    vector<uint8_t> encryptedCredentialKeys(116);
-    size_t size = encryptedCredentialKeys.size();
-    if (!eicProvisioningFinishGetCredentialData(&ctx_, docType.c_str(),
-                                                encryptedCredentialKeys.data(), &size)) {
-        return {};
-    }
-    encryptedCredentialKeys.resize(size);
-    return encryptedCredentialKeys;
-#endif
 }
 
 // ----------------------------------------------------------------------
@@ -691,9 +638,7 @@ JCSecureHardwarePresentationProxy::~JCSecureHardwarePresentationProxy() {
 
 bool JCSecureHardwarePresentationProxy::initialize(bool testCredential, string docType,
                                                      vector<uint8_t> encryptedCredentialKeys) {
-    LOG(INFO) << "JCSecureHardwarePresentationProxy created, sizeof(EicPresentation): "
-              << sizeof(EicPresentation);
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
+    LOG(INFO) << "JCSecureHardwarePresentationProxy created";
     if (!mAppletConnection.connectToTransportClient()) {
         return false;
     }
@@ -718,7 +663,6 @@ bool JCSecureHardwarePresentationProxy::initialize(bool testCredential, string d
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return false;
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -741,17 +685,12 @@ bool JCSecureHardwarePresentationProxy::initialize(bool testCredential, string d
         return false;
     }
     return true;
-#else
-    return eicPresentationInit(&ctx_, testCredential, docType.c_str(),
-                               encryptedCredentialKeys.data(), encryptedCredentialKeys.size());
-#endif
 }
 
 // Returns publicKeyCert (1st component) and signingKeyBlob (2nd component)
 optional<pair<vector<uint8_t>, vector<uint8_t>>>
 JCSecureHardwarePresentationProxy::generateSigningKeyPair(string docType, time_t now) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy generateSigningKeyPair called";
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
 
     cppbor::Array pArray;
     pArray.add(docType)
@@ -765,7 +704,6 @@ JCSecureHardwarePresentationProxy::generateSigningKeyPair(string docType, time_t
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -794,39 +732,18 @@ JCSecureHardwarePresentationProxy::generateSigningKeyPair(string docType, time_t
     const cppbor::Bstr* signingKeyBlobBstr = (*returnArray)[1]->asBstr();
     const vector<uint8_t> signingKeyBlob = signingKeyBlobBstr->value();
 
-    LOG(INFO) << "INS_ICS_GENERATE_SIGNING_KEY_PAIR generated certificate :";
-    printByteArray(publicKeyCert.data(), publicKeyCert.size());
-
     return std::make_pair(publicKeyCert, signingKeyBlob);
-#else
-    uint8_t publicKeyCert[512];
-    size_t publicKeyCertSize = sizeof(publicKeyCert);
-    vector<uint8_t> signingKeyBlob(60);
-
-    if (!eicPresentationGenerateSigningKeyPair(&ctx_, docType.c_str(), now, publicKeyCert,
-                                               &publicKeyCertSize, signingKeyBlob.data())) {
-        return {};
-    }
-
-    vector<uint8_t> cert;
-    cert.resize(publicKeyCertSize);
-    memcpy(cert.data(), publicKeyCert, publicKeyCertSize);
-
-    return std::make_pair(cert, signingKeyBlob);
-#endif
 }
 
 // Returns private key
 optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::createEphemeralKeyPair() {
     LOG(INFO) << "JCSecureHardwarePresentationProxy createEphemeralKeyPair called";
-    vector<uint8_t> priv(EIC_P256_PRIV_KEY_SIZE);
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
+    vector<uint8_t> priv(JCIC_P256_PRIV_KEY_SIZE);
     CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_CREATE_EPHEMERAL_KEY_PAIR, 0, 0};
 
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -853,29 +770,22 @@ optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::createEphemeralKeyP
     const cppbor::Bstr* privKeyBstr = (*returnArray)[0]->asBstr();
     const vector<uint8_t> privKey = privKeyBstr->value();
 
-    if(privKey.size() != EIC_P256_PRIV_KEY_SIZE) {
+    if(privKey.size() != JCIC_P256_PRIV_KEY_SIZE) {
         LOG(ERROR) << "INS_ICS_CREATE_EPHEMERAL_KEY_PAIR invalid key size is returned - " << privKey.size();
         return {};
     }
     memcpy(priv.data(), privKey.data(), privKey.size());
-#else
-    if (!eicPresentationCreateEphemeralKeyPair(&ctx_, priv.data())) {
-        return {};
-    }
-#endif
     return priv;
 }
 
 optional<uint64_t> JCSecureHardwarePresentationProxy::createAuthChallenge() {
     LOG(INFO) << "JCSecureHardwarePresentationProxy createAuthChallenge called";
     uint64_t challenge;
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
     CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_CREATE_AUTH_CHALLENGE, 0, 0};
 
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -902,22 +812,17 @@ optional<uint64_t> JCSecureHardwarePresentationProxy::createAuthChallenge() {
     const cppbor::Uint* challengeUint = (*returnArray)[0]->asUint();
     challenge = challengeUint->value();
 
-#else
-    if (!eicPresentationCreateAuthChallenge(&ctx_, &challenge)) {
-        return {};
-    }
-#endif
     return challenge;
 }
 
 bool JCSecureHardwarePresentationProxy::shutdown() {
     LOG(INFO) << "JCSecureHardwarePresentationProxy shutdown";
+    mAppletConnection.close();
     return true;
 }
 
 bool JCSecureHardwarePresentationProxy::pushReaderCert(const vector<uint8_t>& certX509) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy pushReaderCert called";
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
     cppbor::Array pArray;
     pArray.add(certX509);
     vector<uint8_t> encodedCbor = pArray.encode();
@@ -928,7 +833,6 @@ bool JCSecureHardwarePresentationProxy::pushReaderCert(const vector<uint8_t>& ce
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return false;
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -952,16 +856,12 @@ bool JCSecureHardwarePresentationProxy::pushReaderCert(const vector<uint8_t>& ce
     }
 
     return true;
-#else
-    return eicPresentationPushReaderCert(&ctx_, certX509.data(), certX509.size());
-#endif
 }
 
 bool JCSecureHardwarePresentationProxy::validateRequestMessage(
         const vector<uint8_t>& sessionTranscript, const vector<uint8_t>& requestMessage,
         int coseSignAlg, const vector<uint8_t>& readerSignatureOfToBeSigned) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy validateRequestMessage called";
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
 	vector<uint8_t> readerSignatureOfTBSDer;
 	if(!android::hardware::identity::support::ecdsaSignatureCoseToDer(readerSignatureOfToBeSigned, readerSignatureOfTBSDer)) {
 		return false;
@@ -979,7 +879,6 @@ bool JCSecureHardwarePresentationProxy::validateRequestMessage(
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return false;
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -1003,12 +902,6 @@ bool JCSecureHardwarePresentationProxy::validateRequestMessage(
     }
 
     return true;
-#else
-    return eicPresentationValidateRequestMessage(
-            &ctx_, sessionTranscript.data(), sessionTranscript.size(), requestMessage.data(),
-            requestMessage.size(), coseSignAlg, readerSignatureOfToBeSigned.data(),
-            readerSignatureOfToBeSigned.size());
-#endif
 }
 
 bool JCSecureHardwarePresentationProxy::setAuthToken(
@@ -1017,7 +910,6 @@ bool JCSecureHardwarePresentationProxy::setAuthToken(
         uint64_t verificationTokenChallenge, uint64_t verificationTokenTimestamp,
         int verificationTokenSecurityLevel, const vector<uint8_t>& verificationTokenMac) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy setAuthToken called";
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
     cppbor::Array pArray;
     pArray.add(challenge)
         .add(secureUserId)
@@ -1037,7 +929,6 @@ bool JCSecureHardwarePresentationProxy::setAuthToken(
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return false;
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -1061,13 +952,6 @@ bool JCSecureHardwarePresentationProxy::setAuthToken(
     }
 
     return true;
-#else
-    return eicPresentationSetAuthToken(&ctx_, challenge, secureUserId, authenticatorId,
-                                       hardwareAuthenticatorType, timeStamp, mac.data(), mac.size(),
-                                       verificationTokenChallenge, verificationTokenTimestamp,
-                                       verificationTokenSecurityLevel, verificationTokenMac.data(),
-                                       verificationTokenMac.size());
-#endif
 }
 
 optional<bool> JCSecureHardwarePresentationProxy::validateAccessControlProfile(
@@ -1075,7 +959,6 @@ optional<bool> JCSecureHardwarePresentationProxy::validateAccessControlProfile(
         int timeoutMillis, uint64_t secureUserId, const vector<uint8_t>& mac) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy validateAccessControlProfile called";
     bool accessGranted = false;
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
     cppbor::Array pArray;
     pArray.add(id)
         .add(userAuthenticationRequired)
@@ -1091,7 +974,6 @@ optional<bool> JCSecureHardwarePresentationProxy::validateAccessControlProfile(
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -1119,26 +1001,16 @@ optional<bool> JCSecureHardwarePresentationProxy::validateAccessControlProfile(
     accessGranted = accessBool->asBool()->value();
 
     return accessGranted;
-#else
-    if (!eicPresentationValidateAccessControlProfile(&ctx_, id, readerCertificate.data(),
-                                                     readerCertificate.size(),
-                                                     userAuthenticationRequired, timeoutMillis,
-                                                     secureUserId, mac.data(), &accessGranted)) {
-        return {};
-    }
-#endif
-    return accessGranted;
 }
 
 bool JCSecureHardwarePresentationProxy::startRetrieveEntries() {
     LOG(INFO) << "JCSecureHardwarePresentationProxy startRetrieveEntries called";
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
+
     CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_START_RETRIEVAL, 0, 0};
 
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return false;
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -1162,9 +1034,6 @@ bool JCSecureHardwarePresentationProxy::startRetrieveEntries() {
     }
 
     return true;
-#else
-    return eicPresentationStartRetrieveEntries(&ctx_);
-#endif
 }
 
 bool JCSecureHardwarePresentationProxy::calcMacKey(
@@ -1173,10 +1042,9 @@ bool JCSecureHardwarePresentationProxy::calcMacKey(
         unsigned int numNamespacesWithValues, size_t expectedProofOfProvisioningSize) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy calcMacKey called";
     if (signingKeyBlob.size() != 60) {
-        eicDebug("Unexpected size %zd of signingKeyBlob, expected 60", signingKeyBlob.size());
+        LOG(ERROR) << "Unexpected size " << signingKeyBlob.size() << " of signingKeyBlob, expected 60";
         return false;
     }
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
     cppbor::Array pArray;
     pArray.add(sessionTranscript)
         .add(readerEphemeralPublicKey)
@@ -1192,7 +1060,6 @@ bool JCSecureHardwarePresentationProxy::calcMacKey(
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return false;
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -1216,19 +1083,13 @@ bool JCSecureHardwarePresentationProxy::calcMacKey(
     }
 
     return true;
-#else
-    return eicPresentationCalcMacKey(&ctx_, sessionTranscript.data(), sessionTranscript.size(),
-                                     readerEphemeralPublicKey.data(), signingKeyBlob.data(),
-                                     docType.c_str(), numNamespacesWithValues,
-                                     expectedProofOfProvisioningSize);
-#endif
 }
 
 AccessCheckResult JCSecureHardwarePresentationProxy::startRetrieveEntryValue(
         const string& nameSpace, const string& name, unsigned int newNamespaceNumEntries,
         int32_t entrySize, const vector<int32_t>& accessControlProfileIds) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy startRetrieveEntryValue called";
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
+
     cppbor::Array cborProfileIDs;
     for(size_t i = 0; i < accessControlProfileIds.size(); i++) {
         cborProfileIDs.add(accessControlProfileIds[i]);
@@ -1247,7 +1108,6 @@ AccessCheckResult JCSecureHardwarePresentationProxy::startRetrieveEntryValue(
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return AccessCheckResult::kFailed;
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -1278,26 +1138,6 @@ AccessCheckResult JCSecureHardwarePresentationProxy::startRetrieveEntryValue(
         case 4:
             return AccessCheckResult::kReaderAuthenticationFailed;
     }
-#else
-    uint8_t scratchSpace[512];
-    EicAccessCheckResult result = eicPresentationStartRetrieveEntryValue(
-            &ctx_, nameSpace.c_str(), name.c_str(), newNamespaceNumEntries, entrySize,
-            accessControlProfileIds.data(), accessControlProfileIds.size(), scratchSpace,
-            sizeof scratchSpace);
-    switch (result) {
-        case EIC_ACCESS_CHECK_RESULT_OK:
-            return AccessCheckResult::kOk;
-        case EIC_ACCESS_CHECK_RESULT_NO_ACCESS_CONTROL_PROFILES:
-            return AccessCheckResult::kNoAccessControlProfiles;
-        case EIC_ACCESS_CHECK_RESULT_FAILED:
-            return AccessCheckResult::kFailed;
-        case EIC_ACCESS_CHECK_RESULT_USER_AUTHENTICATION_FAILED:
-            return AccessCheckResult::kUserAuthenticationFailed;
-        case EIC_ACCESS_CHECK_RESULT_READER_AUTHENTICATION_FAILED:
-            return AccessCheckResult::kReaderAuthenticationFailed;
-    }
-#endif
-    eicDebug("Unknown result with code %d, returning kFailed", (int)result);
     return AccessCheckResult::kFailed;
 }
 
@@ -1305,7 +1145,7 @@ optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::retrieveEntryValue(
         const vector<uint8_t>& encryptedContent, const string& nameSpace, const string& name,
         const vector<int32_t>& accessControlProfileIds) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy retrieveEntryValue called";
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
+
     cppbor::Array cborProfileIDs;
     for(size_t i = 0; i < accessControlProfileIds.size(); i++) {
         cborProfileIDs.add(accessControlProfileIds[i]);
@@ -1325,7 +1165,6 @@ optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::retrieveEntryValue(
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -1357,29 +1196,15 @@ optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::retrieveEntryValue(
         return {};
     }
     return content;
-#else
-    uint8_t scratchSpace[512];
-    vector<uint8_t> content;
-    content.resize(encryptedContent.size() - 28);
-    if (!eicPresentationRetrieveEntryValue(
-                &ctx_, encryptedContent.data(), encryptedContent.size(), content.data(),
-                nameSpace.c_str(), name.c_str(), accessControlProfileIds.data(),
-                accessControlProfileIds.size(), scratchSpace, sizeof scratchSpace)) {
-        return {};
-    }
-    return content;
-#endif
 }
 
 optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::finishRetrieval() {
     LOG(INFO) << "JCSecureHardwarePresentationProxy finishRetrieval called";
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
     CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_FINISH_RETRIEVAL, 0, 0};
 
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -1411,30 +1236,70 @@ optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::finishRetrieval() {
         return {};
     }
     return digestToBeMaced;
-#else
-    vector<uint8_t> mac(32);
-    size_t macSize = 32;
-    if (!eicPresentationFinishRetrieval(&ctx_, mac.data(), &macSize)) {
-        return {};
-    }
-    mac.resize(macSize);
-    return mac;
-#endif
 }
 
 optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::deleteCredential(
         const string& docType, const vector<uint8_t>& challenge, bool includeChallenge,
         size_t proofOfDeletionCborSize) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy deleteCredential called";
-    vector<uint8_t> signatureOfToBeSigned(EIC_ECDSA_P256_SIGNATURE_SIZE);
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
-#else
-    if (!eicPresentationDeleteCredential(&ctx_, docType.c_str(), challenge.data(), challenge.size(),
-                                         includeChallenge, proofOfDeletionCborSize,
-                                         signatureOfToBeSigned.data())) {
+    vector<uint8_t> signatureOfToBeSigned(JCIC_ECDSA_P256_SIGNATURE_SIZE);
+
+    cppbor::Array pArray;
+    pArray.add(docType);
+	if(includeChallenge) {
+        pArray.add(challenge);
+	}
+	pArray.add(proofOfDeletionCborSize);
+    vector<uint8_t> encodedCbor = pArray.encode();
+
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_DELETE_CREDENTIAL, 0, 0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
+
+    ResponseApdu response = mAppletConnection.transmit(command);
+
+    if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
         return {};
     }
-#endif
+    vector<uint8_t> responseCbor(response.dataSize());
+    std::copy(response.dataBegin(), response.dataEnd(), responseCbor.begin());
+    auto [item, _, message] = cppbor::parse(responseCbor);
+    if (item == nullptr) {
+        LOG(ERROR) << "INS_ICS_DELETE_CREDENTIAL response is not valid CBOR: " << message;
+        return {};
+    }
+
+    const cppbor::Array* arrayItem = item->asArray();
+    if (arrayItem == nullptr || arrayItem->size() != 2) {
+        LOG(ERROR) << "INS_ICS_DELETE_CREDENTIAL response is not an array with two elements";
+        return {};
+    }
+
+    const cppbor::Uint* successCode = (*arrayItem)[0]->asUint();
+    if(successCode->value() != 0) {
+        LOG(ERROR) << "INS_ICS_DELETE_CREDENTIAL response is not success";
+        return {};
+    }
+
+    const cppbor::Array* returnArray = (*arrayItem)[1]->asArray();
+    const cppbor::Bstr* signatureOfToBeSignedBstr = (*returnArray)[0]->asBstr();
+    const vector<uint8_t> derSignature = signatureOfToBeSignedBstr->value();
+
+    ECDSA_SIG* sig;
+    const unsigned char* p = derSignature.data();
+    sig = d2i_ECDSA_SIG(nullptr, &p, derSignature.size());
+    if (sig == nullptr) {
+        LOG(ERROR) << "INS_ICS_DELETE_CREDENTIAL Error decoding DER signature";
+        return {};
+    }
+
+    if (BN_bn2binpad(sig->r, signatureOfToBeSigned.data(), 32) != 32) {
+        LOG(ERROR) << "INS_ICS_DELETE_CREDENTIAL Error encoding r";
+        return {};
+    }
+    if (BN_bn2binpad(sig->s, signatureOfToBeSigned.data() + 32, 32) != 32) {
+        LOG(ERROR) << "INS_ICS_DELETE_CREDENTIAL Error encoding s";
+        return {};
+    }
     return signatureOfToBeSigned;
 }
 
@@ -1442,8 +1307,7 @@ optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::proveOwnership(
         const string& docType, bool testCredential, const vector<uint8_t>& challenge,
         size_t proofOfOwnershipCborSize) {
     LOG(INFO) << "JCSecureHardwarePresentationProxy proveOwnership called";
-    vector<uint8_t> signatureOfToBeSigned(EIC_ECDSA_P256_SIGNATURE_SIZE);
-#ifdef ENABLE_JAVA_CARD_PRESENTATION
+    vector<uint8_t> signatureOfToBeSigned(JCIC_ECDSA_P256_SIGNATURE_SIZE);
     cppbor::Array pArray;
     pArray.add(docType)
         .add(testCredential)
@@ -1457,7 +1321,6 @@ optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::proveOwnership(
     ResponseApdu response = mAppletConnection.transmit(command);
 
     if (!response.ok() || (response.status() != AppletConnection::SW_OK)) {
-        mAppletConnection.close();
         return {};
     }
     vector<uint8_t> responseCbor(response.dataSize());
@@ -1500,13 +1363,6 @@ optional<vector<uint8_t>> JCSecureHardwarePresentationProxy::proveOwnership(
         LOG(ERROR) << "INS_ICS_FINISH_ADDING_ENTRIES Error encoding s";
         return {};
     }
-#else
-    if (!eicPresentationProveOwnership(&ctx_, docType.c_str(), testCredential, challenge.data(),
-                                       challenge.size(), proofOfOwnershipCborSize,
-                                       signatureOfToBeSigned.data())) {
-        return {};
-    }
-#endif
     return signatureOfToBeSigned;
 }
 

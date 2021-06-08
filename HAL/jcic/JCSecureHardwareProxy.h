@@ -17,10 +17,27 @@
 #ifndef ANDROID_HARDWARE_IDENTITY_JC_SECUREHARDWAREPROXY_H
 #define ANDROID_HARDWARE_IDENTITY_JC_SECUREHARDWAREPROXY_H
 
-#include <libeic.h>
-
 #include "jcic_transport/AppletConnection.h"
 #include "SecureHardwareProxy.h"
+
+
+// The size of an ECSDA signature using P-256.
+
+//
+
+// The R and S values are stored here, first R then S.
+
+//
+
+#define JCIC_ECDSA_P256_SIGNATURE_SIZE 64
+
+
+// The size of a P-256 private key.
+
+//
+
+#define JCIC_P256_PRIV_KEY_SIZE 32
+
 
 namespace android::hardware::identity {
 
@@ -82,7 +99,6 @@ class JCSecureHardwareProvisioningProxy : public SecureHardwareProvisioningProxy
 
   protected:
 	bool isTestCredential;
-    EicProvisioning ctx_;
     AppletConnection mAppletConnection;
 };
 
@@ -152,7 +168,6 @@ class JCSecureHardwarePresentationProxy : public SecureHardwarePresentationProxy
     bool shutdown() override;
 
   protected:
-    EicPresentation ctx_;
     AppletConnection mAppletConnection;
 };
 

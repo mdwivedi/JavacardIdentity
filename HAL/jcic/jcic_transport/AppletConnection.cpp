@@ -63,12 +63,11 @@ bool AppletConnection::connectToTransportClient() {
 
     mTransportClient = TransportFactory::getTransportClient(isEmulator);
 
-    if (mTransportClient != nullptr) {
-        
+    if (mTransportClient != nullptr && !mTransportClient->isConnected()) {
         mTransportClient->openConnection();
-        return true;
+        return mTransportClient->isConnected();
     }
-    return false;
+    return mTransportClient != nullptr && mTransportClient->isConnected();
 }
 
 ResponseApdu AppletConnection::openChannelToApplet() {
@@ -154,13 +153,14 @@ const ResponseApdu AppletConnection::transmit(CommandApdu& command) {
 
         std::vector<uint8_t> responseData;
         mTransportClient->transmit(subCommand.vector(), responseData);
-        LOG(DEBUG) << "Data received: " << responseData.size();
+
         fullResponse = responseData;
     
         if (fullResponse.size() < 2) {
+			LOG(ERROR) << "Response is less than 2 bytes";
             return ResponseApdu({});
         }
-        // If chain did not end, response should be 0x900
+        // If chain did not end, response should be 0x9000
         if ((i + 1) < nrOfAPDUchains && (*(fullResponse.end() - 2) != 0x90) &&
             (*(fullResponse.end() - 1)) != 0x00) {
             return ResponseApdu(fullResponse);
