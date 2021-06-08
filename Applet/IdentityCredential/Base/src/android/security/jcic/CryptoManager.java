@@ -19,7 +19,8 @@ public class CryptoManager {
     public static final byte FLAG_CREDENTIAL_RETRIEVAL_ENTRIES = 7;
     public static final byte FLAG_CREDENTIAL_RETRIEVAL_CHUNKED = 8;
     public static final byte FLAG_CREDENTIAL_RETRIEVAL_NAMESPACE = 9;
-    public static final byte FLAG_UPDATE_CREDENTIAL = 9;
+    public static final byte FLAG_UPDATE_CREDENTIAL = 0x0A;
+    public static final byte FLAG_HMAC_INITIALIZED = 0x0B;
     private static final byte STATUS_FLAGS_SIZE = 2;
 
     public static final byte AES_GCM_KEY_SIZE = 16; 

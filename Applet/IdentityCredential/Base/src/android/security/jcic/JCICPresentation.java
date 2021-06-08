@@ -8,6 +8,7 @@ import javacard.security.KeyBuilder;
 import javacard.security.MessageDigest;
 import javacard.security.Signature;
 
+import static android.security.jcic.CryptoManager.FLAG_HMAC_INITIALIZED;
 import static android.security.jcic.ICConstants.*;
 import static android.security.jcic.ICConstants.LONG_SIZE;
 
@@ -113,10 +114,13 @@ final class JCICPresentation {
 
 	public void reset() {
 		mDigest.reset();
+		mCryptoManager.setStatusFlag(FLAG_HMAC_INITIALIZED, false);
 	}
 
 	private void updateCborHmac(byte[] data, short dataStart, short dataLen) {
-		mHmacSignature.update(data, dataStart, dataLen);
+		if(mCryptoManager.getStatusFlag(FLAG_HMAC_INITIALIZED)) {
+			mHmacSignature.update(data, dataStart, dataLen);
+		}
 		Util.setShort(mIntCurrentCborSize, INT_SIZE, dataLen);
 		ICUtil.incrementByteArray(mIntCurrentCborSize, (short)0, INT_SIZE, mIntCurrentCborSize, INT_SIZE, SHORT_SIZE);
 	}
@@ -942,6 +946,7 @@ final class JCICPresentation {
 		mCBOREncoder.init(outBuffer, (short) 0, le);
 		mHmacKey.setKey(tempBuffer, derivedKeyOffset, derivedKeyLen);
 		mHmacSignature.init(mHmacKey, Signature.MODE_SIGN);
+		mCryptoManager.setStatusFlag(FLAG_HMAC_INITIALIZED, true);
 		mStatus[mBuildCbor] = true;
 
 		// What we're going to calculate the HMAC-SHA256 is the COSE ToBeMaced
@@ -1224,7 +1229,10 @@ final class JCICPresentation {
 				ISOException.throwIt(returnCode);
 			}
 			returnCode = 0;
-			digestToBeMacedSize = mHmacSignature.sign(tempBuffer, (short) 0, (short) 0, tempBuffer, (short) 0);
+			if(mCryptoManager.getStatusFlag(FLAG_HMAC_INITIALIZED)) {
+				digestToBeMacedSize = mHmacSignature.sign(tempBuffer, (short) 0, (short) 0, tempBuffer, (short) 0);
+				mCryptoManager.setStatusFlag(FLAG_HMAC_INITIALIZED, false);
+			}
 		} catch (ISOException e) { }
 		mCBOREncoder.init(outBuffer, (short) 0, le);
 		mCBOREncoder.startArray((short)2);
