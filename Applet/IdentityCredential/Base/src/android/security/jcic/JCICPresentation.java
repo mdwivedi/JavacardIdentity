@@ -205,17 +205,16 @@ final class JCICPresentation {
 	private short processPresentationInit(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
 										 byte[] outBuffer, short le,
 										 byte[] tempBuffer) {
-		reset();
-
-		boolean isTestCredential = Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) == 0x1;
-
 		//If P1P2 other than 0000 and 0001 throw exception
-		if(!isTestCredential && Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
+		if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
 			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
 		}
+		reset();
 
 		mCBORDecoder.init(receiveBuffer, receivingDataOffset, receivingDataLength);
 		mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+
+		boolean isTestCredential = mCBORDecoder.readBoolean();
 
 		// hold a docType in temp buffer
 		short encryptedCredentialKeyOff;
