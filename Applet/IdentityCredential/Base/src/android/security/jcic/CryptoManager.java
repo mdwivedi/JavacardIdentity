@@ -30,9 +30,7 @@ public class CryptoManager {
     public static final byte SHA256_DIGEST_SIZE = 32;
 
     public static final short TEMP_BUFFER_SIZE = 2048;
-    public static final short TEMP_BUFFER_DOCTYPE_MAXSIZE = 64;
-    public static final short TEMP_BUFFER_DOCTYPE_POS = TEMP_BUFFER_SIZE;
-    public static final short TEMP_BUFFER_IV_POS = TEMP_BUFFER_DOCTYPE_POS + TEMP_BUFFER_DOCTYPE_MAXSIZE;
+    public static final short TEMP_BUFFER_IV_POS = TEMP_BUFFER_SIZE;
     public static final short TEMP_BUFFER_GCM_TAG_POS = TEMP_BUFFER_IV_POS + AES_GCM_IV_SIZE;
     
     // Actual Crypto implementation
@@ -68,10 +66,10 @@ public class CryptoManager {
     //TODO pre-shared key is hardcoded for now but we need to get it through either provisioning or from keymaster
     private byte[] mPreSharedKey = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-    public CryptoManager(APDUManager apduManager, ICryptoProvider cryptoProvider /*AccessControlManager accessControlManager,*/) {
+    public CryptoManager(ICryptoProvider cryptoProvider /*AccessControlManager accessControlManager,*/) {
     	mCryptoProvider = cryptoProvider;
     	
-        mTempBuffer = JCSystem.makeTransientByteArray((short) (TEMP_BUFFER_SIZE + TEMP_BUFFER_DOCTYPE_MAXSIZE + AES_GCM_IV_SIZE + AES_GCM_TAG_SIZE),
+        mTempBuffer = JCSystem.makeTransientByteArray((short) (TEMP_BUFFER_SIZE + AES_GCM_IV_SIZE + AES_GCM_TAG_SIZE),
                 JCSystem.CLEAR_ON_DESELECT);
 
         mStatusFlags = JCSystem.makeTransientByteArray((short)(STATUS_FLAGS_SIZE), JCSystem.CLEAR_ON_DESELECT);
@@ -79,8 +77,9 @@ public class CryptoManager {
         // Secure Random number generation for HBK
         mRandomData = RandomData.getInstance(RandomData.ALG_TRNG);
         mRandomData.nextBytes(mTempBuffer, (short)0, AES_GCM_KEY_SIZE);
-        mHBK = JCSystem.makeTransientByteArray(AES_GCM_KEY_SIZE, JCSystem.CLEAR_ON_RESET);
+        mHBK = new byte[AES_GCM_KEY_SIZE];
         Util.arrayCopyNonAtomic(mTempBuffer, (short) 0, mHBK, (short) 0, AES_GCM_KEY_SIZE);
+        Util.arrayFillNonAtomic(mTempBuffer, (byte)0, AES_GCM_KEY_SIZE, (byte)0);
 
         // Create the storage key byte array 
         mCredentialStorageKey = JCSystem.makeTransientByteArray(AES_GCM_KEY_SIZE, JCSystem.CLEAR_ON_RESET);
@@ -295,6 +294,8 @@ public class CryptoManager {
                                             byte[] authTag, short authTagOffset, short authTagLen) {
 
         if(isTestCredential) {
+            //In case of testCredential HBK should be initialized with 0's
+            //If testCredential is true mCredentialStorageKey is already initialized with 0's so no need to create separate HBK for testCredential.
             return mCryptoProvider.aesGCMDecrypt(mCredentialStorageKey, (short)0, (short)mCredentialStorageKey.length,
                     encryptedCredentialKeyBlob, keyBlobOff, keyBlobSize,
                     outData, outDataOffset,

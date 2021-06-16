@@ -16,10 +16,7 @@ import static android.security.jcic.ICConstants.*;
 final class JCICProvisioning {
 	// Reference to internal Crypto Manager instance
 	private CryptoManager mCryptoManager;
-	
-    // Reference to the internal APDU manager instance
-    private final APDUManager mAPDUManager;
-    
+
     // Reference to the internal CBOR decoder instance
     private final CBORDecoder mCBORDecoder;
     
@@ -44,9 +41,8 @@ final class JCICProvisioning {
 
     private final short[] mStatusWords;
 
-	public JCICProvisioning(CryptoManager cryptoManager, APDUManager apduManager, CBORDecoder decoder, CBOREncoder encoder) {
+	public JCICProvisioning(CryptoManager cryptoManager, CBORDecoder decoder, CBOREncoder encoder) {
 		mCryptoManager = cryptoManager;
-		mAPDUManager = apduManager;
         mCBORDecoder = decoder;
         mCBOREncoder = encoder;
         
@@ -59,16 +55,16 @@ final class JCICProvisioning {
         mSecondaryDigest = mCryptoManager.mSecondaryDigest;
         mAdditionalDataDigester = mCryptoManager.mAdditionalDataDigester;
 
-        mIntExpectedCborSizeAtEnd = JCSystem.makeTransientByteArray((short) INT_SIZE, JCSystem.CLEAR_ON_RESET);
+        mIntExpectedCborSizeAtEnd = JCSystem.makeTransientByteArray(INT_SIZE, JCSystem.CLEAR_ON_RESET);
         mIntCurrentCborSize = JCSystem.makeTransientByteArray((short) (INT_SIZE + SHORT_SIZE), JCSystem.CLEAR_ON_RESET);
-        mIntCurrentEntrySize = JCSystem.makeTransientByteArray((short) INT_SIZE, JCSystem.CLEAR_ON_RESET);
+        mIntCurrentEntrySize = JCSystem.makeTransientByteArray(INT_SIZE, JCSystem.CLEAR_ON_RESET);
         mIntCurrentEntryNumBytesReceived = JCSystem.makeTransientByteArray((short) (INT_SIZE + SHORT_SIZE), JCSystem.CLEAR_ON_RESET);
 	}
 
 	public void reset() {
-	    Util.arrayFillNonAtomic(mIntExpectedCborSizeAtEnd, (short)0, (short) INT_SIZE, (byte)0);
+	    Util.arrayFillNonAtomic(mIntExpectedCborSizeAtEnd, (short)0, INT_SIZE, (byte)0);
 	    Util.arrayFillNonAtomic(mIntCurrentCborSize, (short)0, (short)(INT_SIZE + SHORT_SIZE), (byte)0);
-	    Util.arrayFillNonAtomic(mIntCurrentEntrySize, (short)0, (short) INT_SIZE, (byte)0);
+	    Util.arrayFillNonAtomic(mIntCurrentEntrySize, (short)0, INT_SIZE, (byte)0);
 	    Util.arrayFillNonAtomic(mIntCurrentEntryNumBytesReceived, (short)0, (short)(INT_SIZE + SHORT_SIZE), (byte)0);
         Util.arrayFillNonAtomic(mAdditionalDataSha256, (short)0, SHA256_DIGEST_SIZE, (byte)0);
 
@@ -91,13 +87,13 @@ final class JCICProvisioning {
 		mSecondaryDigest.update(data, dataStart, dataLen);
 	}
 
-	public void processAPDU() {
-        mAPDUManager.receiveAll();
-        byte[] receiveBuffer = mAPDUManager.getReceiveBuffer();
-        short receivingDataOffset = mAPDUManager.getOffsetIncomingData();
-        short receivingDataLength = mAPDUManager.getReceivingLength();
-        short le = mAPDUManager.setOutgoing(true);
-        byte[] outBuffer = mAPDUManager.getSendBuffer();
+	public void processAPDU(APDUManager apduManager) {
+        apduManager.receiveAll();
+        byte[] receiveBuffer = apduManager.getReceiveBuffer();
+        short receivingDataOffset = apduManager.getOffsetIncomingData();
+        short receivingDataLength = apduManager.getReceivingLength();
+        short le = apduManager.setOutgoing(true);
+        byte[] outBuffer = apduManager.getSendBuffer();
         byte[] tempBuffer = mCryptoManager.getTempBuffer();
         short outGoingLength = (short)0;
 
@@ -142,7 +138,7 @@ final class JCICProvisioning {
 	        default: 
 	            ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
         }
-        mAPDUManager.setOutgoingLength(outGoingLength);
+        apduManager.setOutgoingLength(outGoingLength);
 	}
 
     private short processProvisioningInit(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
@@ -297,7 +293,7 @@ final class JCICProvisioning {
         mCBORDecoder.readMajorType(CBORBase.TYPE_ARRAY);
         byte docTypeOffset = (byte)0;
         short docTypeLength = mCBORDecoder.readByteString(tempBuffer, docTypeOffset);
-        short accessControlProfileCount = mCBORDecoder.readInt8();
+        short accessControlProfileCount = (short)(mCBORDecoder.readInt8() & 0x00FF);
         if(accessControlProfileCount >= MAX_NUM_ACCESS_CONTROL_PROFILE_IDS) {
         	ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
@@ -313,7 +309,7 @@ final class JCICProvisioning {
         	byte intSize = mCBORDecoder.getIntegerSize();
 	        if(intSize  == BYTE_SIZE) {
 	        	//One byte integer = max 255
-	        	entryCount = mCBORDecoder.readInt8();
+	        	entryCount = (short)(mCBORDecoder.readInt8() & 0x00FF);
 	        	mEntryCounts[i] = entryCount;
 	        } else {
 	        	//Entry count should not exceed 255
@@ -354,7 +350,7 @@ final class JCICProvisioning {
     	byte intSize = mCBORDecoder.getIntegerSize();
     	if(intSize == BYTE_SIZE) {
     		byte expectedLen = mCBORDecoder.readInt8();
-    		mCBOREncoder.startByteString(expectedLen);
+    		mCBOREncoder.startByteString((short)(expectedLen & 0x00FF));
     		mIntExpectedCborSizeAtEnd[3] = expectedLen;
     	} else if (intSize == SHORT_SIZE) {
     		short expectedLen = mCBORDecoder.readInt16();

@@ -42,11 +42,11 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 
         mAPDUManager = new APDUManager((byte) (CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE));
 
-        CryptoManager cryptoManager = new CryptoManager(mAPDUManager, cryptoProvider/*, mAccessControlManager,*/);
+        CryptoManager cryptoManager = new CryptoManager(cryptoProvider);
     	
-		mProvisioning = new JCICProvisioning(cryptoManager, mAPDUManager, mCBORDecoder, mCBOREncoder);
+		mProvisioning = new JCICProvisioning(cryptoManager, mCBORDecoder, mCBOREncoder);
 		
-		mPresentation = new JCICPresentation(cryptoManager, mAPDUManager, mCBORDecoder, mCBOREncoder);
+		mPresentation = new JCICPresentation(cryptoManager, mCBORDecoder, mCBOREncoder);
 		
     }
 
@@ -61,7 +61,6 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
         if (this.selectingApplet()) {
         	mProvisioning.reset();
         	mPresentation.reset();
-            //mAccessControlManager.reset();
             processSelectApplet(apdu);
             return;
         }
@@ -96,7 +95,7 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 	            case ISO7816.INS_ICS_FINISH_ADDING_ENTRIES:
 	            case ISO7816.INS_ICS_FINISH_GET_CREDENTIAL_DATA:
                 case ISO7816.INS_ICS_UPDATE_CREDENTIAL:
-	            	mProvisioning.processAPDU();
+	            	mProvisioning.processAPDU(mAPDUManager);
 	            	break;
                 case ISO7816.INS_ICS_PRESENTATION_INIT:
                 case ISO7816.INS_ICS_CREATE_EPHEMERAL_KEY_PAIR:
@@ -113,11 +112,8 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
                 case ISO7816.INS_ICS_GENERATE_SIGNING_KEY_PAIR:
                 case ISO7816.INS_ICS_PROVE_OWNERSHIP:
                 case ISO7816.INS_ICS_DELETE_CREDENTIAL:
-                    mPresentation.processAPDU();
+                    mPresentation.processAPDU(mAPDUManager);
                     break;
-	            case ISO7816.INS_ICS_TEST_CBOR:
-	                //processTestCBOR();
-	                break;
 	            default:
 	                ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
             }

@@ -305,7 +305,14 @@ public class ICUtil {
         return cborEncoder.getCurrentOffset();
     }
 
-    public static short readUint(CBORDecoder cborDecoder, byte[] outBuff, short outBuffOffset) {
+    /**
+     * Reads unsigned integer value of any size from CBORDecoder and copy in out buffer.
+     * @param cborDecoder CBOR decoder to read UInt from
+     * @param outBuff Out put UInt value.
+     * @param outBuffOffset Out buffer offset
+     * @return length of UInt
+     */
+    public static short readUInt(CBORDecoder cborDecoder, byte[] outBuff, short outBuffOffset) {
         if(cborDecoder.getMajorType() != CBORBase.TYPE_UNSIGNED_INTEGER) {
             ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
@@ -325,6 +332,11 @@ public class ICUtil {
         return intSize;
     }
 
+    /**
+     * Calculates size of required bytes to encode given size of data
+     * @param size of data.
+     * @return size of required bytes to encode given size of data.
+     */
     public static byte calCborAdditionalLengthBytesFor(short size) {
         if (size < 24) {
             return (byte)0;
@@ -334,6 +346,13 @@ public class ICUtil {
         return SHORT_SIZE;
     }
 
+    /**
+     * Calculates size of required bytes to encode given size of data
+     * @param valueBuff size of data in byte array
+     * @param valueOffset size byte array offset
+     * @param valueSize size byte array length
+     * @return size of required bytes to encode given size of data.
+     */
     public static byte calCborAdditionalLengthBytesFor(byte[] valueBuff, short valueOffset, short valueSize) {
         if(valueSize <= 0 || valueSize > 8) {
             ISOException.throwIt(ISO7816.SW_DATA_INVALID);
