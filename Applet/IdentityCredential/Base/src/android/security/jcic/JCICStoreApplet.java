@@ -22,7 +22,8 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
     private static final byte[] STR_CREDENTIAL_SOTRE_AUTHIR_NAME = {(byte) 0x47, (byte) 0x6f, (byte) 0x6f, (byte) 0x67, (byte) 0x6c, (byte) 0x65};
     
     public static final short DATA_CHUNK_SIZE = (short)1024;
-    
+    public static final short MAX_APDU_SIZE = (short)230;
+
     public static final boolean IS_DIRECT_ACCESS_ENABLED = false;
     
     private final CBORDecoder mCBORDecoder;
@@ -129,8 +130,8 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
     private void processSelectApplet(APDU apdu){
         mAPDUManager.setOutgoing();
         byte[] outBuff = mAPDUManager.getSendBuffer();
-        Util.setShort(outBuff, (short) 0, (short) apdu.getBuffer().length);
-        Util.setShort(outBuff, (short) 2, APDUManager.MAXCHUNKSIZE);
+        Util.setShort(outBuff, (short) 0, MAX_APDU_SIZE);
+        Util.setShort(outBuff, (short) 2, DATA_CHUNK_SIZE);
         Util.setShort(outBuff, (short) 4, CryptoManager.getAESKeySize());
 
         mAPDUManager.setOutgoingLength((short) 6);
