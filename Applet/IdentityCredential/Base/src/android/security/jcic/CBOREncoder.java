@@ -71,7 +71,7 @@ public class CBOREncoder extends CBORBase{
     	byte additionalLength = ICUtil.calCborAdditionalLengthBytesFor(lenthBuff, lenthBuffOff, lengthSize);
     	switch(additionalLength) {
             case 0:
-                return encodeValue((byte) (TYPE_BYTE_STRING << 5), (short)(lenthBuff[lenthBuffOff + lengthSize - 1] & 0x00FF));
+                return encodeValue((byte) (TYPE_BYTE_STRING << 5), (short)(lenthBuff[(short)(lenthBuffOff + lengthSize - 1)] & 0x00FF));
 	    	case 1:
 	    		encodeLengthByte = ENCODED_ONE_BYTE;
 	    		break;

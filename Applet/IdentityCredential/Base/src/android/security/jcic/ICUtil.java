@@ -154,7 +154,7 @@ public class ICUtil {
                 short a1 = (short)(first[(short)(firstOffset + index)] & 0x00FF);
                 sum = (short)(carry + a1);
             }
-            first[firstOffset + index] = (byte)sum;
+            first[(short)(firstOffset + index)] = (byte)sum;
             carry = (byte) (sum > 255 ? 1 : 0);
             index--;
         }
@@ -358,7 +358,7 @@ public class ICUtil {
             ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
         byte i = 0;
-        for (; valueBuff[valueOffset + i] == 0x0 && i < valueSize; i++);
+        for (; valueBuff[(short)(valueOffset + i)] == 0x0 && i < valueSize; i++);
         if(i > 0) {
             valueSize = (short) (valueSize - i);
         }

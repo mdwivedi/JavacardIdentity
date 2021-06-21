@@ -392,7 +392,7 @@ final class JCICPresentation {
 		short pubKeyDerIndex = (short)0;
 		for(short i = (short)0; i < certLen; i++) {
 			short matches = (short) 0;
-			for(short j = (short)0; j < (short)DER_PUB_KEY_OID.length && ((i + j) < certLen - 1); j++) {
+			for(short j = (short)0; j < (short)DER_PUB_KEY_OID.length && ((short)(i + j) < (short)(certLen - 1)); j++) {
 				if(cert[(short)(certOffset + i + j)] == DER_PUB_KEY_OID[j]) {
 					matches++;
 				} else {
@@ -400,7 +400,7 @@ final class JCICPresentation {
 				}
 			}
 			if(matches == (short)DER_PUB_KEY_OID.length) {
-				for (short j = (short)0; j < (short) DER_EC_KEY_CURVE_OID.length && ((i + (short)DER_PUB_KEY_OID.length + j) < certLen - 1); j++) {
+				for (short j = (short)0; j < (short) DER_EC_KEY_CURVE_OID.length && ((short)(i + (short)DER_PUB_KEY_OID.length + j) < (short)(certLen - 1)); j++) {
 					if (cert[(short) (certOffset + i + (short)DER_PUB_KEY_OID.length + j)] == DER_EC_KEY_CURVE_OID[j]) {
 						matches++;
 					} else {
@@ -667,15 +667,15 @@ final class JCICPresentation {
 				tempBuffer, secureUserIdOffset, tempBuffer, freeOffset);
 		boolean passedReaderAuth = checkReaderAuth(tempBuffer, readerCertOffset, readerCertLen, tempBuffer, freeOffset);
 
-		mAcpMasksInts[mAccessControlProfileMaskValidatedOffset + (INT_SIZE - (id / (short)8)) - 1] |= ((short)1 << (id % (short)8));
+		mAcpMasksInts[(short)(mAccessControlProfileMaskValidatedOffset + (INT_SIZE - (id / (short)8)) - 1)] |= ((short)1 << (id % (short)8));
 		if(readerCertLen > 0) {
-			mAcpMasksInts[mAccessControlProfileMaskUsesReaderAuthOffset + (INT_SIZE - (id / (short)8)) - 1] |= ((short)1 << (id % (short)8));
+			mAcpMasksInts[(short)(mAccessControlProfileMaskUsesReaderAuthOffset + (INT_SIZE - (id / (short)8)) - 1)] |= ((short)1 << (id % (short)8));
 		}
 		if(!passedReaderAuth) {
-			mAcpMasksInts[mAccessControlProfileMaskFailedReaderAuthOffset + (INT_SIZE - (id / (short)8)) - 1] |= ((short)1 << (id % (short)8));
+			mAcpMasksInts[(short)(mAccessControlProfileMaskFailedReaderAuthOffset + (INT_SIZE - (id / (short)8)) - 1)] |= ((short)1 << (id % (short)8));
 		}
 		if(!passedUserAuth) {
-			mAcpMasksInts[mAccessControlProfileMaskFailedUserAuthOffset + (INT_SIZE - (id / (short)8)) - 1] |= ((short)1 << (id % (short)8));
+			mAcpMasksInts[(short)(mAccessControlProfileMaskFailedUserAuthOffset + (INT_SIZE - (id / (short)8)) - 1)] |= ((short)1 << (id % (short)8));
 		}
 
 		boolean isAccessGranted = passedUserAuth && passedReaderAuth;
@@ -883,29 +883,13 @@ final class JCICPresentation {
 		if(signingKeyBlobLen != (short)60) {
 			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
 		}
-		byte numNamespacesWithValuesLen = mCBORDecoder.getIntegerSize();
 		short numNamespacesWithValuesOffset = (short)(docTypeOffset + docTypeLen);
-		if(numNamespacesWithValuesLen == BYTE_SIZE) {
-			tempBuffer[numNamespacesWithValuesOffset] = mCBORDecoder.readInt8();
-		} else if(numNamespacesWithValuesLen == SHORT_SIZE) {
-			Util.setShort(tempBuffer, numNamespacesWithValuesOffset, mCBORDecoder.readInt16());
-		} else if(numNamespacesWithValuesLen == INT_SIZE) {
-			mCBORDecoder.readInt32(tempBuffer, numNamespacesWithValuesOffset);
-		} else if(numNamespacesWithValuesLen == LONG_SIZE) {
-			mCBORDecoder.readInt64(tempBuffer, numNamespacesWithValuesOffset);
-		}
+		byte numNamespacesWithValuesLen = (byte)ICUtil.readUInt(mCBORDecoder, tempBuffer, numNamespacesWithValuesOffset);
 
-		byte expectedDeviceNamespacesSizeLen = mCBORDecoder.getIntegerSize();
+
 		short expectedDeviceNamespacesSizeOffset = (short)(numNamespacesWithValuesOffset + numNamespacesWithValuesLen);
-		if(expectedDeviceNamespacesSizeLen == BYTE_SIZE) {
-			tempBuffer[expectedDeviceNamespacesSizeOffset] = mCBORDecoder.readInt8();
-		} else if(expectedDeviceNamespacesSizeLen == SHORT_SIZE) {
-			Util.setShort(tempBuffer, expectedDeviceNamespacesSizeOffset, mCBORDecoder.readInt16());
-		} else if(expectedDeviceNamespacesSizeLen == INT_SIZE) {
-			mCBORDecoder.readInt32(tempBuffer, expectedDeviceNamespacesSizeOffset);
-		} else if(expectedDeviceNamespacesSizeLen == LONG_SIZE) {
-			mCBORDecoder.readInt64(tempBuffer, expectedDeviceNamespacesSizeOffset);
-		}
+		byte expectedDeviceNamespacesSizeLen = (byte)ICUtil.readUInt(mCBORDecoder, tempBuffer, expectedDeviceNamespacesSizeOffset);
+
 
 		short nonceAndTagOffset = (short)(expectedDeviceNamespacesSizeOffset + expectedDeviceNamespacesSizeLen);
 		short nonceAndTagLen = Util.arrayCopyNonAtomic(tempBuffer, signingKeyBlobOffset, tempBuffer, nonceAndTagOffset, CryptoManager.AES_GCM_IV_SIZE);
