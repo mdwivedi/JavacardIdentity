@@ -3,6 +3,7 @@ package android.security.jcic;
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
+import javacard.security.CryptoException;
 import javacard.security.KeyBuilder;
 import javacard.security.MessageDigest;
 import javacard.security.RandomData;
@@ -49,7 +50,7 @@ public class CryptoManager {
     private final short[] mCredentialKeyPairLengths;
 
     // Signature object for creating and verifying credential signatures 
-    final MessageDigest mDigest;
+    MessageDigest mDigest;
     // Digester object for calculating proof of provisioning data digest
     final MessageDigest mSecondaryDigest;
     // Digester object for calculating addition data digest
@@ -87,7 +88,12 @@ public class CryptoManager {
         mCredentialKeyPair = JCSystem.makeTransientByteArray((short)(EC_KEY_SIZE * 3 + 1), JCSystem.CLEAR_ON_RESET);
         mCredentialKeyPairLengths = JCSystem.makeTransientShortArray((short)2, JCSystem.CLEAR_ON_RESET);
 
-        mDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, true);
+        try {
+            mDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, true);
+        } catch (CryptoException e) {
+            //External access is not supported in JCard simulator.
+            mDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
+        }
         mSecondaryDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
         mAdditionalDataDigester = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
 
