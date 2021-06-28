@@ -10,17 +10,18 @@ import javacard.security.RandomData;
 public class CryptoManager {
 
     public static final byte FLAG_TEST_CREDENTIAL = 0;
-    public static final byte FLAG_CREDENTIAL_KEYS_INITIALIZED = 1;
-    public static final byte FLAG_CREDENTIAL_PERSONALIZATION_STATE = 2;
-    public static final byte FLAG_CREDENTIAL_PERSONALIZING_PROFILES = 3;
-    public static final byte FLAG_CREDENTIAL_PERSONALIZING_ENTRIES = 4;
-    public static final byte FLAG_CREDENTIAL_PERSONALIZING_NAMESPACE = 5;
-    public static final byte FLAG_CREDENTIAL_RETRIEVAL_STARTED = 6;
-    public static final byte FLAG_CREDENTIAL_RETRIEVAL_ENTRIES = 7;
-    public static final byte FLAG_CREDENTIAL_RETRIEVAL_CHUNKED = 8;
-    public static final byte FLAG_CREDENTIAL_RETRIEVAL_NAMESPACE = 9;
-    public static final byte FLAG_UPDATE_CREDENTIAL = 0x0A;
-    public static final byte FLAG_HMAC_INITIALIZED = 0x0B;
+    public static final byte FLAG_PROVISIONING_INITIALIZED = 1;
+    public static final byte FLAG_CREDENTIAL_KEYS_INITIALIZED = 2;
+    public static final byte FLAG_CREDENTIAL_PERSONALIZATION_STATE = 3;
+    public static final byte FLAG_CREDENTIAL_PERSONALIZING_PROFILES = 4;
+    public static final byte FLAG_CREDENTIAL_PERSONALIZING_ENTRIES = 5;
+    public static final byte FLAG_CREDENTIAL_PERSONALIZING_NAMESPACE = 6;
+    public static final byte FLAG_CREDENTIAL_RETRIEVAL_STARTED = 7;
+    public static final byte FLAG_CREDENTIAL_RETRIEVAL_ENTRIES = 8;
+    public static final byte FLAG_CREDENTIAL_RETRIEVAL_CHUNKED = 9;
+    public static final byte FLAG_CREDENTIAL_RETRIEVAL_NAMESPACE = 0x0A;
+    public static final byte FLAG_UPDATE_CREDENTIAL = 0x0B;
+    public static final byte FLAG_HMAC_INITIALIZED = 0x0C;
     private static final byte STATUS_FLAGS_SIZE = 2;
 
     public static final byte AES_GCM_KEY_SIZE = 16; 
@@ -219,7 +220,7 @@ public class CryptoManager {
     }
     
     public void assertCredentialInitialized() {
-        assertStatusFlagSet(FLAG_CREDENTIAL_KEYS_INITIALIZED);
+        assertStatusFlagSet(FLAG_PROVISIONING_INITIALIZED);
     }
 
     public void assertInPersonalizationState() {

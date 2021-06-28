@@ -159,7 +159,7 @@ final class JCICProvisioning {
 
         mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE, false);
         // Credential keys are loaded
-        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_KEYS_INITIALIZED, true);
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_PROVISIONING_INITIALIZED, true);
 
         mCryptoManager.setStatusFlag(CryptoManager.FLAG_UPDATE_CREDENTIAL, false);
 
@@ -259,6 +259,7 @@ final class JCICProvisioning {
 
 	private short processCreateCredentialKey(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
                                             byte[] outBuffer, short le, byte[] tempBuffer) {
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_KEYS_INITIALIZED);
 
         //If P1P2 other than 0000 and 0001 throw exception
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
@@ -272,6 +273,8 @@ final class JCICProvisioning {
         mCryptoManager.createEcKeyPairAndAttestation(mCryptoManager.getStatusFlag(CryptoManager.FLAG_TEST_CREDENTIAL));
         short pubKeyLen = mCryptoManager.getCredentialEcPubKey(tempBuffer, (short)0);
 
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_KEYS_INITIALIZED, true);
+
         mCBOREncoder.init(outBuffer, (short) 0, le);
         mCBOREncoder.startArray((short)2);
         mCBOREncoder.encodeUInt8((byte)0); //Success
@@ -283,7 +286,7 @@ final class JCICProvisioning {
 	private short processStartPersonalization(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
                                              byte[] outBuffer, short le, byte[] tempBuffer) {
         mCryptoManager.assertCredentialInitialized();
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE);//TODO check api flow as per HAL doc
 
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != (short)0) {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -613,6 +616,7 @@ final class JCICProvisioning {
 
 	private short processFinishGetCredentialData(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
                                                 byte[] outBuffer, short le, byte[] tempBuffer) {
+        mCryptoManager.assertStatusFlagSet(CryptoManager.FLAG_CREDENTIAL_KEYS_INITIALIZED);
 
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != (short)0) {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
