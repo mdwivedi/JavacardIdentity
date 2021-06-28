@@ -364,4 +364,19 @@ public class ICUtil {
         }
         return  valueSize > INT_SIZE ? LONG_SIZE : valueSize > SHORT_SIZE ? INT_SIZE : valueSize > BYTE_SIZE ? SHORT_SIZE : (short)(valueBuff[(short)(valueOffset + i)] & 0x00FF) > (short)24 ? BYTE_SIZE : (byte)0;
     }
+
+    public static byte arrayCompare(byte src[], short srcOff, byte dest[], short destOff, short length) {
+        if (length < 0) {
+            ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+        }
+        for (short i = 0; i < length; i++) {
+            if (src[(short)(srcOff + i)] != dest[(short)(destOff + i)]) {
+                short thisSrc = (short) (src[(short)(srcOff + i)] & 0x00ff);
+                short thisDest = (short) (dest[(short)(destOff + i)] & 0x00ff);
+                return (byte) (thisSrc >= thisDest ? 1 : -1);
+            }
+        }
+
+        return 0;
+    }
 }

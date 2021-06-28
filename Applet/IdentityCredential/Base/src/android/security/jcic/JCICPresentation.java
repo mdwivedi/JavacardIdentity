@@ -704,13 +704,13 @@ final class JCICPresentation {
 				return false;
 			}
 		}
-		if(Util.arrayCompare(mAuthAndVerificationTokensLongs, mAuthTokenTimestampOffset, mAuthAndVerificationTokensLongs, mVerificationTokenTimestampOffset, LONG_SIZE) > (byte)0) {
+		if(ICUtil.arrayCompare(mAuthAndVerificationTokensLongs, mAuthTokenTimestampOffset, mAuthAndVerificationTokensLongs, mVerificationTokenTimestampOffset, LONG_SIZE) > (byte)0) {
 			return false;
 		}
-		if(Util.arrayCompare(timeOutMillis, timeOutMillisOffset, tempBuffer, tempOffset, LONG_SIZE) > (byte)0) {
+		if(ICUtil.arrayCompare(timeOutMillis, timeOutMillisOffset, tempBuffer, tempOffset, LONG_SIZE) > (byte)0) {
 			ICUtil.incrementByteArray(tempBuffer, tempOffset, LONG_SIZE, timeOutMillis, timeOutMillisOffset, LONG_SIZE);
 			ICUtil.incrementByteArray(tempBuffer, tempOffset, LONG_SIZE, mAuthAndVerificationTokensLongs, mAuthTokenTimestampOffset, LONG_SIZE);
-			if(Util.arrayCompare(mAuthAndVerificationTokensLongs, mVerificationTokenTimestampOffset, tempBuffer, tempOffset, LONG_SIZE) > (byte)0) {
+			if(ICUtil.arrayCompare(mAuthAndVerificationTokensLongs, mVerificationTokenTimestampOffset, tempBuffer, tempOffset, LONG_SIZE) > (byte)0) {
 				return false;
 			}
 		}

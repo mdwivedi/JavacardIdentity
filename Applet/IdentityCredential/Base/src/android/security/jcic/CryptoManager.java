@@ -87,7 +87,7 @@ public class CryptoManager {
         mCredentialKeyPair = JCSystem.makeTransientByteArray((short)(EC_KEY_SIZE * 3 + 1), JCSystem.CLEAR_ON_RESET);
         mCredentialKeyPairLengths = JCSystem.makeTransientShortArray((short)2, JCSystem.CLEAR_ON_RESET);
 
-        mDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
+        mDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, true);
         mSecondaryDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
         mAdditionalDataDigester = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
 
