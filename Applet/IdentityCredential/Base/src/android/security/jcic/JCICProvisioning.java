@@ -250,6 +250,7 @@ final class JCICProvisioning {
         mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE, false);
         // Credential keys are loaded
         mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_KEYS_INITIALIZED, true);
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_PROVISIONING_INITIALIZED, true);
 
         mCBOREncoder.init(outBuffer, (short) 0, le);
         mCBOREncoder.startArray((short)1);

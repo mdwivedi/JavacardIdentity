@@ -89,6 +89,7 @@ public class CryptoManager {
         mCredentialKeyPairLengths = JCSystem.makeTransientShortArray((short)2, JCSystem.CLEAR_ON_RESET);
 
         try {
+            //External access is enabled to pass VTS, after some VTS passed, remaining VTS failed while MessageDigest update if it is not exported.
             mDigest = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, true);
         } catch (CryptoException e) {
             //External access is not supported in JCard simulator.
