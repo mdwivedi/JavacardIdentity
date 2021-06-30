@@ -110,11 +110,11 @@ public:
     /**
      * Return the maximum chunk size of the applet
      */
-    uint16_t chunkSize() { return mHalChunkSize; }
+    uint16_t getHwChunkSize() { return mAppletChunkSize; }
 private:
     se_transport::ITransportClient* mTransportClient;
 
-    uint16_t mApduMaxBufferSize = 255;
+    uint16_t mApduMaxBufferSize = 230;
     uint16_t mAppletChunkSize = 0;
     uint16_t mHalChunkSize = 0;
 

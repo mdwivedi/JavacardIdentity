@@ -32,7 +32,8 @@ cc_library_static {
     ],
     static_libs: [
         "libbase",
-        "libcppbor",
+        "libcppbor_external",
+        "libcppcose_rkp",
         "libutils",
         "libsoft_attestation_cert",
         "libkeymaster_portable",
@@ -64,11 +65,11 @@ cc_binary {
     ],
     static_libs: [
         "libbase",
-        "libcppbor",
+        "libcppbor_external",
+        "libcppcose_rkp",
         "libutils",
         "libsoft_attestation_cert",
         "libkeymaster_portable",
-        "libsoft_attestation_cert",
         "libpuresoftkeymasterdevice",
         "android.hardware.identity-support-lib",
         "android.hardware.identity-V3-ndk_platform",

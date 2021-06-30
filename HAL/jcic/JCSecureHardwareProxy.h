@@ -66,6 +66,8 @@ class JCSecureHardwareProvisioningProxy : public SecureHardwareProvisioningProxy
     bool initializeForUpdate(bool testCredential, string docType,
                              vector<uint8_t> encryptedCredentialKeys) override;
 
+    size_t getHwChunkSize() override;
+
     bool shutdown() override;
 
     // Returns public key certificate.
@@ -111,6 +113,8 @@ class JCSecureHardwarePresentationProxy : public SecureHardwarePresentationProxy
 
     bool initialize(bool testCredential, string docType,
                     vector<uint8_t> encryptedCredentialKeys) override;
+
+    size_t getHwChunkSize() override;
 
     // Returns publicKeyCert (1st component) and signingKeyBlob (2nd component)
     optional<pair<vector<uint8_t>, vector<uint8_t>>> generateSigningKeyPair(string docType,

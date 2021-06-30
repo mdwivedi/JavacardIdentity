@@ -80,6 +80,8 @@ class SecureHardwareProvisioningProxy : public RefBase {
     virtual bool initializeForUpdate(bool testCredential, string docType,
                                      vector<uint8_t> encryptedCredentialKeys) = 0;
 
+    virtual size_t getHwChunkSize() = 0;
+
     // Returns public key certificate chain with attestation.
     //
     // This must return an entire certificate chain and its implementation must
@@ -132,6 +134,8 @@ class SecureHardwarePresentationProxy : public RefBase {
 
     virtual bool initialize(bool testCredential, string docType,
                             vector<uint8_t> encryptedCredentialKeys) = 0;
+
+    virtual size_t getHwChunkSize() = 0;
 
     // Returns publicKeyCert (1st component) and signingKeyBlob (2nd component)
     virtual optional<pair<vector<uint8_t>, vector<uint8_t>>> generateSigningKeyPair(string docType,

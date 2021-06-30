@@ -35,14 +35,15 @@ using se_transport::TransportFactory;
 namespace android::hardware::identity {
 
 const std::vector<uint8_t> kAndroidIdentityCredentialAID = {
-        0xA0, 0x00, 0x00, 0x04, 0x76, 0x02, 0x0C, 0x01, 0x01, 0x01};
+        //0xA0, 0x00, 0x00, 0x04, 0x76, 0x02, 0x0C, 0x01, 0x01, 0x01};
+		0xA0, 0x00, 0x00, 0x00, 0x62, 0x03, 0x02, 0x0C, 0x01, 0x01, 0x02};
 
 const uint8_t kINSGetRespone = 0xc0;
 const uint8_t kMaxCBORHeader = 5;
-//const uint8_t kDefMaxApduHeader = 6;
-//const uint8_t kDefaultApduSize = 0xFF;
+const uint8_t kDefMaxApduHeader = 6;
+const uint8_t kDefaultApduSize = 0xFF;
 // TODO: investigate why 3 additional bytes overhead are required for pixel 2
-//const uint8_t kExtendedMaxApduHeader = 13; 
+const uint8_t kExtendedMaxApduHeader = 13;
 
 bool AppletConnection::connectToTransportClient() {
     if (mTransportClient != nullptr) {
@@ -100,12 +101,26 @@ ResponseApdu AppletConnection::openChannelToApplet() {
                 mOpenChannel = selectResponse.channelNumber;
             }
         });*/
-    mApduMaxBufferSize = 230;
-    mAppletChunkSize = 1024;
-    mHalChunkSize = mAppletChunkSize - kMaxCBORHeader;
+	CommandApdu command{0x00, 0xA4, 0x04, 0, kAndroidIdentityCredentialAID.size(), 0};
+    std::copy(kAndroidIdentityCredentialAID.begin(), kAndroidIdentityCredentialAID.end(), command.dataBegin());
     mOpenChannel = 0x00;
-    resp.push_back(0x90);
-    resp.push_back(0x00);
+	mTransportClient->transmit(command.vector(), resp);
+	if((*(resp.end() - 2) != 0x90) &&
+            (*(resp.end() - 1)) != 0x00) {
+		return ResponseApdu({});
+	}
+	// APDU buffer size is encoded in select response
+	mApduMaxBufferSize = (*resp.begin() << 8) + *(resp.begin() + 1);
+	mApduMaxBufferSize -= mApduMaxBufferSize <= (kDefaultApduSize + kDefMaxApduHeader)
+								  ? kDefMaxApduHeader
+								  : kExtendedMaxApduHeader;
+
+	// Chunck size is encoded in select response
+	mAppletChunkSize = (*(resp.begin()+2) << 8) + *(resp.begin() + 3);
+
+	// Actual maximum data chunk size needs to take cbor header in account
+	mHalChunkSize = mAppletChunkSize - kMaxCBORHeader;
+
     return ResponseApdu(resp);
 }
 
@@ -121,10 +136,7 @@ const ResponseApdu AppletConnection::transmit(CommandApdu& command) {
     // Configure the logical channel
     *command.begin() |= mOpenChannel;
 
-    /*if (command.dataSize() > mAppletChunkSize) {
-        LOG(ERROR) << "Data too big (" << command.dataSize() << "/" << mAppletChunkSize << "), abort";
-        return ResponseApdu({});
-    } else*/ if (command.size() > mApduMaxBufferSize) {
+    if (command.size() > mApduMaxBufferSize) {
         // Too big for APDU buffer, perform APDU chaining
         nrOfAPDUchains = std::ceil(static_cast<float>(command.dataSize()) / mApduMaxBufferSize);
         LOG(DEBUG) << "Too big for APDU buffer. Sending " << nrOfAPDUchains << " chains";

@@ -41,8 +41,8 @@
 #include <openssl/x509.h>
 #include <openssl/x509_vfy.h>
 
-#include <cppbor/cppbor.h>
-#include <cppbor/cppbor_parse.h>
+#include <cppbor.h>
+#include <cppbor_parse.h>
 #include "AppletConnection.h"
 #include <cmath>
 
@@ -184,10 +184,14 @@ bool JCSecureHardwareProvisioningProxy::initialize(bool testCredential) {
             return false;
         }
     }
+	cppbor::Array pArray;
+    pArray.add(testCredential);
+    vector<uint8_t> encodedCbor = pArray.encode();
 
     // Send the command to the applet to create a new credential
     CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_PROVISIONING_INIT, 0,
-                        testCredential};
+                        0, encodedCbor.size(), 0};
+    std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
 
     ResponseApdu response = mAppletConnection.transmit(command);
 
@@ -234,7 +238,6 @@ bool JCSecureHardwareProvisioningProxy::initializeForUpdate(
     if (!mAppletConnection.isChannelOpen()) {
         ResponseApdu selectResponse = mAppletConnection.openChannelToApplet();
         if (!selectResponse.ok() || selectResponse.status() != AppletConnection::SW_OK) {
-			LOG(INFO) << "JCSecureHardwareProvisioningProxy initializeForUpdate openChannelToApplet failed";
             return false;
         }
     }
@@ -269,6 +272,13 @@ bool JCSecureHardwareProvisioningProxy::initializeForUpdate(
         return false;
     }
     return true;
+}
+
+size_t JCSecureHardwareProvisioningProxy::getHwChunkSize() {
+	if (mAppletConnection.isChannelOpen()) {
+		return mAppletConnection.getHwChunkSize();
+    }
+	return 0;
 }
 
 // Returns public key certificate.
@@ -652,12 +662,13 @@ bool JCSecureHardwarePresentationProxy::initialize(bool testCredential, string d
     }
 
     cppbor::Array pArray;
-    pArray.add(docType)
+    pArray.add(testCredential)
+		.add(docType)
         .add(std::move(encryptedCredentialKeys));
     vector<uint8_t> encodedCbor = pArray.encode();
 
     // Send the command to the applet to create a new credential
-    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_PRESENTATION_INIT, 0, testCredential, encodedCbor.size(), 0};
+    CommandApdu command{AppletConnection::CLA_PROPRIETARY, AppletConnection::INS_ICS_PRESENTATION_INIT, 0, 0, encodedCbor.size(), 0};
     std::copy(encodedCbor.begin(), encodedCbor.end(), command.dataBegin());
 
     ResponseApdu response = mAppletConnection.transmit(command);
@@ -685,6 +696,13 @@ bool JCSecureHardwarePresentationProxy::initialize(bool testCredential, string d
         return false;
     }
     return true;
+}
+
+size_t JCSecureHardwarePresentationProxy::getHwChunkSize() {
+	if (mAppletConnection.isChannelOpen()) {
+		return mAppletConnection.getHwChunkSize();
+    }
+	return 0;
 }
 
 // Returns publicKeyCert (1st component) and signingKeyBlob (2nd component)

@@ -27,7 +27,7 @@ CommandApdu::CommandApdu(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2, size_
     // constexpr size_t extendedLcMax = std::numeric_limits<uint16_t>::max();
     constexpr size_t extendedLeMax = std::numeric_limits<uint16_t>::max() + 1;
 
-    const bool extended = true;//lc > shortLcMax || le > shortLeMax;
+    const bool extended = (cla == 0x00) ? false : true;//lc > 230 || le > shortLeMax;
     const bool hasLc = lc > 0;
     const bool hasLe = le > 0;
     const size_t lcSize = hasLc ? (extended ? 3 : 1) : 0;
@@ -46,9 +46,9 @@ CommandApdu::CommandApdu(uint8_t cla, uint8_t ins, uint8_t p1, uint8_t p2, size_
     if (hasLc) {
         if (extended) {
             *it++ = 0;
-            *it++ = 0xff & (lc >> 8);
+            *it++ = 0xFF & (lc >> 8);
         }
-        *it++ = 0xff & lc;
+        *it++ = 0xFF & lc;
         mDataBegin = it;
         it += lc;
         mDataEnd = it;
