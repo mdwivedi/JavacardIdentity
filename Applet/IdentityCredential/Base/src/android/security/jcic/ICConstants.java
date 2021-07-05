@@ -10,10 +10,14 @@ class ICConstants {
     public static final short MAX_NUM_ACCESS_CONTROL_PROFILE_IDS = 32;
     public static final short MAX_NUM_NAMESPACES = 32;
 
-    public static final byte STATUS_NUM_ENTRY_COUNTS = 0;
-    public static final byte STATUS_CURRENT_NAMESPACE = 1;
-    public static final byte STATUS_CURRENT_NAMESPACE_NUM_PROCESSED = 2;
-    public static final byte STATUS_WORDS = 3;
+    public static final byte STATUS_NUM_ACP_COUNTS = 0;
+    public static final byte STATUS_ACP_PROCESSED = 1;
+    public static final byte STATUS_NUM_NAMESPACE_COUNTS = 2;
+    public static final byte STATUS_CURRENT_NAMESPACE = 3;
+    public static final byte STATUS_CURRENT_NAMESPACE_NUM_PROCESSED = 4;
+    public static final byte STATUS_NUM_ENTRY_COUNTS = 5;
+    public static final byte STATUS_CURRENT_ENTRY = 6;
+    public static final byte STATUS_WORDS = 7;
 
     public static final byte COSE_SIGN_ALG = (byte)0xF9; //-7
 

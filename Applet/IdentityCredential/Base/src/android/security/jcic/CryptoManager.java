@@ -12,17 +12,19 @@ public class CryptoManager {
 
     public static final byte FLAG_TEST_CREDENTIAL = 0;
     public static final byte FLAG_PROVISIONING_INITIALIZED = 1;
-    public static final byte FLAG_CREDENTIAL_KEYS_INITIALIZED = 2;
-    public static final byte FLAG_CREDENTIAL_PERSONALIZATION_STATE = 3;
-    public static final byte FLAG_CREDENTIAL_PERSONALIZING_PROFILES = 4;
-    public static final byte FLAG_CREDENTIAL_PERSONALIZING_ENTRIES = 5;
-    public static final byte FLAG_CREDENTIAL_PERSONALIZING_NAMESPACE = 6;
-    public static final byte FLAG_CREDENTIAL_RETRIEVAL_STARTED = 7;
-    public static final byte FLAG_CREDENTIAL_RETRIEVAL_ENTRIES = 8;
-    public static final byte FLAG_CREDENTIAL_RETRIEVAL_CHUNKED = 9;
-    public static final byte FLAG_CREDENTIAL_RETRIEVAL_NAMESPACE = 0x0A;
-    public static final byte FLAG_UPDATE_CREDENTIAL = 0x0B;
-    public static final byte FLAG_HMAC_INITIALIZED = 0x0C;
+    public static final byte FLAG_PROVISIONING_KEYS_INITIALIZED = 2;
+    public static final byte FLAG_PROVISIONING_CREDENTIAL_STATE = 3;
+    public static final byte FLAG_PERSONALIZING_ENTRIES = 4;
+    public static final byte FLAG_PERSONALIZING_FINISH_ENTRIES = 5;
+    public static final byte FLAG_PERSONALIZING_FINISH_ENTRIES_VALUES = 6;
+    public static final byte FLAG_PERSONALIZING_FINISH_ADDING_ENTRIES = 7;
+    public static final byte FLAG_PERSONALIZING_FINISH_GET_CREDENTIAL = 8;
+    public static final byte FLAG_PRESENTING_CREATE_EPHEMERAL = 9;
+    public static final byte FLAG_PRESENTING_CREATE_AUTH_CHALLENGE = 0x0A;
+    public static final byte FLAG_PRESENTING_START_RETRIEVAL = 0x0B;
+    public static final byte FLAG_PRESENTING_START_RETRIEVE_ENTRY = 0x0C;
+    public static final byte FLAG_UPDATE_CREDENTIAL = 0x0D;
+    public static final byte FLAG_HMAC_INITIALIZED = 0x0E;
     private static final byte STATUS_FLAGS_SIZE = 2;
 
     public static final byte AES_GCM_KEY_SIZE = 16; 
@@ -105,16 +107,7 @@ public class CryptoManager {
      * as well as all status flags.
      */
     public void reset() {
-        ICUtil.setBit(mStatusFlags, FLAG_TEST_CREDENTIAL, false);
-        ICUtil.setBit(mStatusFlags, FLAG_CREDENTIAL_KEYS_INITIALIZED, false);
-        ICUtil.setBit(mStatusFlags, FLAG_CREDENTIAL_PERSONALIZATION_STATE, false);
-        ICUtil.setBit(mStatusFlags, FLAG_CREDENTIAL_PERSONALIZING_PROFILES, false);
-        ICUtil.setBit(mStatusFlags, FLAG_CREDENTIAL_PERSONALIZING_NAMESPACE, false);
-        ICUtil.setBit(mStatusFlags, FLAG_CREDENTIAL_RETRIEVAL_STARTED, false);
-        ICUtil.setBit(mStatusFlags, FLAG_CREDENTIAL_RETRIEVAL_ENTRIES, false);
-        ICUtil.setBit(mStatusFlags, FLAG_CREDENTIAL_RETRIEVAL_CHUNKED, false);
-        ICUtil.setBit(mStatusFlags, FLAG_CREDENTIAL_RETRIEVAL_NAMESPACE, false);
-
+        Util.arrayFillNonAtomic(mStatusFlags, (short)0, STATUS_FLAGS_SIZE, (byte)0);
         Util.arrayFillNonAtomic(mCredentialStorageKey, (short)0, KeyBuilder.LENGTH_AES_128, (byte)0);
     }
     
@@ -231,7 +224,7 @@ public class CryptoManager {
     }
 
     public void assertInPersonalizationState() {
-        assertStatusFlagSet(FLAG_CREDENTIAL_PERSONALIZATION_STATE);
+        assertStatusFlagSet(FLAG_PROVISIONING_CREDENTIAL_STATE);
     }
 
     public void assertStatusFlagNotSet(byte statusFlag) {

@@ -424,6 +424,7 @@ final class JCICPresentation {
 	private short processCreateEphemeralKeyPair(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
 											   byte[] outBuffer, short le,
 											   byte[] tempBuffer) {
+		mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_PRESENTING_CREATE_EPHEMERAL);
 
 		//If P1P2 other than 0000 and 0001 throw exception
 		if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
@@ -434,6 +435,8 @@ final class JCICPresentation {
 		short keyBlobStart = (short) 0;
 		mCryptoManager.createEcKeyPair(tempBuffer, keyBlobStart, mKeyPairLengthsHolder);
 		Util.arrayCopyNonAtomic(tempBuffer, keyBlobStart, mEphemeralPrivateKey, (short)0, CryptoManager.EC_KEY_SIZE);
+
+		mCryptoManager.setStatusFlag(CryptoManager.FLAG_PRESENTING_CREATE_EPHEMERAL, true);
 
 		mCBOREncoder.init(outBuffer, (short) 0, le);
 		mCBOREncoder.startArray((short)2);
@@ -446,6 +449,7 @@ final class JCICPresentation {
 	private short processCreateAuthChallenge(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
 											byte[] outBuffer, short le,
 											byte[] tempBuffer) {
+		mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_PRESENTING_CREATE_AUTH_CHALLENGE);
 		//If P1P2 other than 0000 and 0001 throw exception
 		if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
 			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -457,6 +461,7 @@ final class JCICPresentation {
 			Util.arrayCopyNonAtomic(tempBuffer, challengeOffset, mAuthChallenge, (short) 0, LONG_SIZE);
 		} while (tempBuffer[challengeOffset] == 0x00);
 
+		mCryptoManager.setStatusFlag(CryptoManager.FLAG_PRESENTING_CREATE_AUTH_CHALLENGE, true);
 		mCBOREncoder.init(outBuffer, (short) 0, le);
 		mCBOREncoder.startArray((short)2);
 		mCBOREncoder.encodeUInt8((byte)0); //Success
@@ -518,6 +523,7 @@ final class JCICPresentation {
 		Util.arrayFillNonAtomic(mAcpMasksInts, mAccessControlProfileMaskFailedUserAuthOffset, INT_SIZE, (byte)0);
 		mReaderPublicKeySize = 0;
 
+		mCryptoManager.setStatusFlag(CryptoManager.FLAG_PRESENTING_START_RETRIEVAL, true);
 		mCBOREncoder.init(outBuffer, (short) 0, le);
 		mCBOREncoder.startArray((short)1);
 		mCBOREncoder.encodeUInt8((byte)0); //Success
@@ -1046,6 +1052,7 @@ final class JCICPresentation {
 	}
 
 	private short processStartRetrieveEntryValue(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength, byte[] outBuffer, short le, byte[] tempBuffer) {
+		mCryptoManager.assertStatusFlagSet(CryptoManager.FLAG_PRESENTING_START_RETRIEVAL);
 		//If P1P2 other than 0000 throw exception
 		if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
 			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -1136,6 +1143,7 @@ final class JCICPresentation {
 		} catch (ISOException e) {
 			result = e.getReason();
 		}
+		mCryptoManager.setStatusFlag(CryptoManager.FLAG_PRESENTING_START_RETRIEVE_ENTRY, true);
 		mCBOREncoder.init(outBuffer, (short) 0, le);
 		mCBOREncoder.startArray((short)1);
 		mCBOREncoder.encodeUInt8((byte)result); //Success
@@ -1143,6 +1151,7 @@ final class JCICPresentation {
 	}
 
 	private short processRetrieveEntryValue(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength, byte[] outBuffer, short le, byte[] tempBuffer) {
+		mCryptoManager.assertStatusFlagSet(CryptoManager.FLAG_PRESENTING_START_RETRIEVE_ENTRY);
 		//If P1P2 other than 0000 throw exception
 		if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
 			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -1187,6 +1196,7 @@ final class JCICPresentation {
 	}
 
 	private short processFinishRetrieval(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength, byte[] outBuffer, short le, byte[] tempBuffer) {
+		mCryptoManager.assertStatusFlagSet(CryptoManager.FLAG_PRESENTING_START_RETRIEVAL);
 		//If P1P2 other than 0000 throw exception
 		if (Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
 			ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);

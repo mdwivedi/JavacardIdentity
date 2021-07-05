@@ -157,7 +157,7 @@ final class JCICProvisioning {
 
         mCryptoManager.createCredentialStorageKey(isTestCredential);
 
-        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE, false);
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_PROVISIONING_CREDENTIAL_STATE, false);
         // Credential keys are loaded
         mCryptoManager.setStatusFlag(CryptoManager.FLAG_PROVISIONING_INITIALIZED, true);
 
@@ -247,9 +247,9 @@ final class JCICProvisioning {
         // Note: We don't care about the previous ProofOfProvisioning SHA-256
         mCryptoManager.setStatusFlag(CryptoManager.FLAG_UPDATE_CREDENTIAL, true);
 
-        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE, false);
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_PROVISIONING_CREDENTIAL_STATE, false);
         // Credential keys are loaded
-        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_KEYS_INITIALIZED, true);
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_PROVISIONING_KEYS_INITIALIZED, true);
         mCryptoManager.setStatusFlag(CryptoManager.FLAG_PROVISIONING_INITIALIZED, true);
 
         mCBOREncoder.init(outBuffer, (short) 0, le);
@@ -260,7 +260,7 @@ final class JCICProvisioning {
 
 	private short processCreateCredentialKey(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
                                             byte[] outBuffer, short le, byte[] tempBuffer) {
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_KEYS_INITIALIZED);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_PROVISIONING_KEYS_INITIALIZED);
 
         //If P1P2 other than 0000 and 0001 throw exception
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != 0x0) {
@@ -274,7 +274,7 @@ final class JCICProvisioning {
         mCryptoManager.createEcKeyPairAndAttestation(mCryptoManager.getStatusFlag(CryptoManager.FLAG_TEST_CREDENTIAL));
         short pubKeyLen = mCryptoManager.getCredentialEcPubKey(tempBuffer, (short)0);
 
-        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_KEYS_INITIALIZED, true);
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_PROVISIONING_KEYS_INITIALIZED, true);
 
         mCBOREncoder.init(outBuffer, (short) 0, le);
         mCBOREncoder.startArray((short)2);
@@ -287,7 +287,7 @@ final class JCICProvisioning {
 	private short processStartPersonalization(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
                                              byte[] outBuffer, short le, byte[] tempBuffer) {
         mCryptoManager.assertCredentialInitialized();
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE);//TODO check api flow as per HAL doc
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_PROVISIONING_CREDENTIAL_STATE);
 
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != (short)0) {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -301,12 +301,13 @@ final class JCICProvisioning {
         if(accessControlProfileCount >= MAX_NUM_ACCESS_CONTROL_PROFILE_IDS) {
         	ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
+        mStatusWords[STATUS_NUM_ACP_COUNTS] = accessControlProfileCount;
 
         short numEntryCounts = mCBORDecoder.readLength();
         if(numEntryCounts >= MAX_NUM_NAMESPACES) {
         	ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
-        mStatusWords[STATUS_NUM_ENTRY_COUNTS] = numEntryCounts;
+        mStatusWords[STATUS_NUM_NAMESPACE_COUNTS] = numEntryCounts;
         //Check each entry count should not exceed 255 and preserve entry counts
         for(short i = 0; i < numEntryCounts; i++) {
         	short entryCount = 0;
@@ -315,6 +316,7 @@ final class JCICProvisioning {
 	        	//One byte integer = max 255
 	        	entryCount = (short)(mCBORDecoder.readInt8() & 0x00FF);
 	        	mEntryCounts[i] = entryCount;
+                mStatusWords[STATUS_NUM_ENTRY_COUNTS] += entryCount;
 	        } else {
 	        	//Entry count should not exceed 255
 	        	ISOException.throwIt(ISO7816.SW_DATA_INVALID);
@@ -382,7 +384,7 @@ final class JCICProvisioning {
     	updatePrimaryAndSecondaryDigest(outBuffer, (short) 0, mCBOREncoder.getCurrentOffset());
 
         // Set the Applet in the PERSONALIZATION state
-        mCryptoManager.setStatusFlag(CryptoManager.FLAG_CREDENTIAL_PERSONALIZATION_STATE, true);
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_PROVISIONING_CREDENTIAL_STATE, true);
 
         mCBOREncoder.reset();
         mCBOREncoder.init(outBuffer, (short) 0, le);
@@ -394,7 +396,7 @@ final class JCICProvisioning {
 	private short processAddAccessControlProfile(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
                                                 byte[] outBuffer, short le, byte[] tempBuffer) {
         mCryptoManager.assertInPersonalizationState();
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZING_ENTRIES);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_PERSONALIZING_ENTRIES);
 
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != (short)0) {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -415,6 +417,10 @@ final class JCICProvisioning {
         outLength = ICUtil.constructCBORAccessControl(mCBORDecoder, mCBOREncoder, receiveBuffer, receivingDataOffset, receivingDataLength,
         									outBuffer, (short)0, le, false);
         updatePrimaryAndSecondaryDigest(outBuffer, (short)0, outLength);
+        mStatusWords[STATUS_ACP_PROCESSED] += (short)1;
+        if(mStatusWords[STATUS_ACP_PROCESSED] == mStatusWords[STATUS_NUM_ACP_COUNTS]) {
+            mCryptoManager.setStatusFlag(CryptoManager.FLAG_PERSONALIZING_ENTRIES, true);
+        }
 
         mCBOREncoder.reset();
         mCBOREncoder.init(outBuffer, (short) 0, le);
@@ -427,8 +433,8 @@ final class JCICProvisioning {
 
 	private short processBeginAddEntry(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
                                       byte[] outBuffer, short le, byte[] tempBuffer) {
-        mCryptoManager.assertInPersonalizationState();
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZING_ENTRIES);
+        mCryptoManager.assertStatusFlagSet(CryptoManager.FLAG_PERSONALIZING_ENTRIES);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_PERSONALIZING_FINISH_ENTRIES);
 
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != (short)0) {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -446,7 +452,7 @@ final class JCICProvisioning {
         	mStatusWords[STATUS_CURRENT_NAMESPACE] = (short)0;
             mStatusWords[STATUS_CURRENT_NAMESPACE_NUM_PROCESSED] = (short) 0;
             // Opens the main map: { * Namespace => [ + Entry ] }
-            mCBOREncoder.startMap(mStatusWords[STATUS_NUM_ENTRY_COUNTS]);
+            mCBOREncoder.startMap(mStatusWords[STATUS_NUM_NAMESPACE_COUNTS]);
             //encode nameSpace string
             mCBOREncoder.encodeTextString(tempBuffer, (short)0, nameSpaceLen);
             // Opens the per-namespace array: [ + Entry ]
@@ -490,6 +496,11 @@ final class JCICProvisioning {
         updatePrimaryAndSecondaryDigest(outBuffer, (short) 0, mCBOREncoder.getCurrentOffset());
     	
     	mStatusWords[STATUS_CURRENT_NAMESPACE_NUM_PROCESSED] += (short) 1;
+    	if(mStatusWords[STATUS_NUM_ENTRY_COUNTS] == mStatusWords[STATUS_CURRENT_ENTRY]) {
+            mCryptoManager.setStatusFlag(CryptoManager.FLAG_PERSONALIZING_FINISH_ENTRIES, true);
+        } else {
+            mStatusWords[STATUS_CURRENT_ENTRY] += (short)1;
+        }
 
         mCBOREncoder.reset();
         mCBOREncoder.init(outBuffer, (short) 0, le);
@@ -501,7 +512,7 @@ final class JCICProvisioning {
 	private short processAddEntryValue(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
                                       byte[] outBuffer, short le, byte[] tempBuffer) {
         mCryptoManager.assertInPersonalizationState();
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZING_PROFILES);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_PERSONALIZING_FINISH_ENTRIES_VALUES);
 
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != (short)0) {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -577,14 +588,18 @@ final class JCICProvisioning {
                 }
             }
             updatePrimaryAndSecondaryDigest(tempBuffer, (short) 0, mCBOREncoder.getCurrentOffset());
+
+            if(mStatusWords[STATUS_NUM_ENTRY_COUNTS] == mStatusWords[STATUS_CURRENT_ENTRY]) {
+                mCryptoManager.setStatusFlag(CryptoManager.FLAG_PERSONALIZING_FINISH_ENTRIES_VALUES, true);
+            }
         }
         return returnLen;
 	}
 
 	private short processFinishAddingEntries(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
                                             byte[] outBuffer, short le, byte[] tempBuffer) {
-        mCryptoManager.assertInPersonalizationState();
-        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_CREDENTIAL_PERSONALIZING_PROFILES);
+        mCryptoManager.assertStatusFlagSet(CryptoManager.FLAG_PERSONALIZING_FINISH_ENTRIES_VALUES);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_PERSONALIZING_FINISH_ADDING_ENTRIES);
 
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != (short)0) {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -605,6 +620,7 @@ final class JCICProvisioning {
 
         short signOffset = (short)(digestOffset + digestLen);
         short signLen = mCryptoManager.ecSignWithNoDigest(tempBuffer, digestOffset, tempBuffer, signOffset);
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_PERSONALIZING_FINISH_ADDING_ENTRIES, true);
 
         mCBOREncoder.reset();
         mCBOREncoder.init(outBuffer, (short)0, le);
@@ -617,7 +633,8 @@ final class JCICProvisioning {
 
 	private short processFinishGetCredentialData(byte[] receiveBuffer, short receivingDataOffset, short receivingDataLength,
                                                 byte[] outBuffer, short le, byte[] tempBuffer) {
-        mCryptoManager.assertStatusFlagSet(CryptoManager.FLAG_CREDENTIAL_KEYS_INITIALIZED);
+        mCryptoManager.assertStatusFlagSet(CryptoManager.FLAG_PERSONALIZING_FINISH_ADDING_ENTRIES);
+        mCryptoManager.assertStatusFlagNotSet(CryptoManager.FLAG_PERSONALIZING_FINISH_GET_CREDENTIAL);
 
         if(Util.getShort(receiveBuffer, ISO7816.OFFSET_P1) != (short)0) {
             ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
@@ -642,6 +659,8 @@ final class JCICProvisioning {
 				tempBuffer, (short) 0, //out encrypted data
 				tempBuffer, (short) 0, docTypeLen, //Auth data
 				tempBuffer, CryptoManager.TEMP_BUFFER_IV_POS); //Nonce and tag
+
+        mCryptoManager.setStatusFlag(CryptoManager.FLAG_PERSONALIZING_FINISH_GET_CREDENTIAL, true);
 
         mCBOREncoder.reset();
         mCBOREncoder.init(outBuffer, (short)0, le);
