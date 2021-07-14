@@ -1,6 +1,8 @@
 package android.security.jcic;
 
 import com.android.javacard.keymaster.*;
+import javacard.framework.ISO7816;
+import javacard.framework.ISOException;
 import javacard.framework.Util;
 import javacard.security.*;
 import javacard.security.KeyPair;
@@ -15,25 +17,31 @@ public class CryptoProviderImpl implements ICryptoProvider{
 	private final Signature mHMACSignature;
 	private final KeyPair mECKeyPair1;
 	private final KeyAgreement mECDHAgreement;
-	private java.security.Signature sunSigner;
+	private Signature signerNoDigest;
+	private Signature signerWithSha256;
+	private KeyPair ecKeyPair;
 	
 	CryptoProviderImpl() {
 		kmSEProvider = new KMJCardSimulator();
 		mHMACSignature = Signature.getInstance(Signature.ALG_HMAC_SHA_256, false);
 		mECKeyPair1 = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
 		mECDHAgreement = KeyAgreement.getInstance(KeyAgreement.ALG_EC_SVDP_DH_PLAIN, false);
-		try {
-			sunSigner = java.security.Signature.getInstance("NONEwithECDSA", "SunEC");
-		} catch (NoSuchAlgorithmException | NoSuchProviderException e) {
-
-		}
+		ecKeyPair = new KeyPair(KeyPair.ALG_EC_FP, KeyBuilder.LENGTH_EC_FP_256);
+		signerNoDigest = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
+		signerWithSha256 = Signature.getInstance(Signature.ALG_ECDSA_SHA_256, false);
 	}
 
 	@Override
 	public void createECKey(byte[] privKeyBuf, short privKeyStart, short privKeyMaxLength,
 			byte[] pubModBuf, short pubModStart, short pubModMaxLength, short[] lengths) {
-		kmSEProvider.createAsymmetricKey(KMType.EC, privKeyBuf, privKeyStart, privKeyMaxLength,
-				pubModBuf, pubModStart, pubModMaxLength, lengths);
+		ecKeyPair.genKeyPair();
+
+		ECPrivateKey privateKey = (ECPrivateKey) ecKeyPair.getPrivate();
+		Secp256r1.configureECKeyParameters(privateKey);
+		lengths[0] = privateKey.getS(privKeyBuf, privKeyStart);
+		ECPublicKey publicKey = (ECPublicKey) ecKeyPair.getPublic();
+		Secp256r1.configureECKeyParameters(publicKey);
+		lengths[1] = publicKey.getW(pubModBuf, pubModStart);
 	}
 
 	@Override
@@ -41,11 +49,11 @@ public class CryptoProviderImpl implements ICryptoProvider{
 									byte[] data, short dataStart, short dataLength,
 									byte[] outSign, short outSignStart) {
 
-    	KMOperation signer = kmSEProvider.initAsymmetricOperation(KMType.SIGN, KMType.EC,  KMType.PADDING_NONE , KMType.DIGEST_NONE,
-    			privKeyBuf, privKeyStart, privKeyLength, //Private key
-				privKeyBuf, (short)0, (short)0); //Public key
-    	
-		return signer.sign(data, dataStart, dataLength, outSign, outSignStart);
+		ECPrivateKey key = (ECPrivateKey) ecKeyPair.getPrivate();
+		Secp256r1.configureECKeyParameters(key);
+		key.setS(privKeyBuf, privKeyStart, privKeyLength);
+		signerNoDigest.init(key, Signature.MODE_SIGN);
+    	return signerNoDigest.signPreComputedHash(data, dataStart, dataLength, outSign, outSignStart);
 	}
 
 	@Override
@@ -88,41 +96,11 @@ public class CryptoProviderImpl implements ICryptoProvider{
 	public boolean ecVerifyWithNoDigest(byte[] pubKeyBuf, short pubKeyStart, short pubKeyLength,
                                         byte[] data, short dataStart, short dataLength,
                                         byte[] signBuf, short signStart, short signLength) {
-		boolean result;
-		KeyFactory kf;
-		try {
-			kf = KeyFactory.getInstance("EC");
-			AlgorithmParameters parameters = AlgorithmParameters.getInstance("EC", "SunEC");
-			//Supported curve secp256r1
-			parameters.init(new ECGenParameterSpec("secp256r1"));
-			ECParameterSpec ecParameters = parameters.getParameterSpec(ECParameterSpec.class);
-			//Check if  the first byte is 04 and remove it.
-			if (pubKeyBuf[pubKeyStart] == 0x04) {
-				//uncompressed format.
-				pubKeyStart++;
-				pubKeyLength--;
-			}
-			short i = 0;
-			byte[] pubx = new byte[pubKeyLength / 2];
-			for (; i < pubKeyLength / 2; i++) {
-				pubx[i] = pubKeyBuf[pubKeyStart + i];
-			}
-			byte[] puby = new byte[pubKeyLength / 2];
-			for (i = 0; i < pubKeyLength / 2; i++) {
-				puby[i] = pubKeyBuf[pubKeyStart + pubKeyLength / 2 + i];
-			}
-			BigInteger bIX = new BigInteger(pubx);
-			BigInteger bIY = new BigInteger(puby);
-			ECPoint point = new ECPoint(bIX, bIY);
-			ECPublicKeySpec pubkeyspec = new ECPublicKeySpec(point, ecParameters);
-			java.security.interfaces.ECPublicKey pubkey = (java.security.interfaces.ECPublicKey) kf.generatePublic(pubkeyspec);
-			sunSigner.initVerify(pubkey);
-			sunSigner.update(data, dataStart, dataLength);
-			result = sunSigner.verify(signBuf, signStart, signLength);
-		} catch(Exception e) {
-			result = false;
-		}
-		return result;
+		ECPublicKey pubKey = (ECPublicKey)ecKeyPair.getPublic();
+		Secp256r1.configureECKeyParameters(pubKey);
+		pubKey.setW(pubKeyBuf, pubKeyStart, pubKeyLength);
+		signerNoDigest.init(pubKey, Signature.MODE_VERIFY);
+		return signerNoDigest.verifyPreComputedHash(data, dataStart, dataLength, signBuf, signStart, signLength);
 	}
 
 	@Override
@@ -130,6 +108,7 @@ public class CryptoProviderImpl implements ICryptoProvider{
 								  byte[] pubKey, short pubKeyOffset, short pubKeyLen,
 								  byte[] outSecret, short outSecretOffset) {
 		ECPrivateKey privateKey = (ECPrivateKey) mECKeyPair1.getPrivate();
+		Secp256r1.configureECKeyParameters(privateKey);
 		privateKey.setS(privKey, privKeyOffset, privKeyLen);
 		mECDHAgreement.init(privateKey);
 		short result = (short)0;
@@ -203,5 +182,46 @@ public class CryptoProviderImpl implements ICryptoProvider{
 		HMACKey hmacKey = createHMACKey(key, keyOffset, keyLen);
 		mHMACSignature.init(hmacKey, Signature.MODE_VERIFY);
 		return mHMACSignature.verify(data, dataOffset, dataLen, mac, macOffset, macLen);
+	}
+
+	@Override
+	public boolean verifyCertByPubKey(byte[] cert, short certOffset, short certLen,
+									  byte[] pubKey, short pubKeyOffset, short pubKeyLen) {
+		if(certLen <= 0 || cert[0] != 0x30) {
+			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+		}
+		short tbsStart = 0;
+		for(short i = (short) (certOffset + 1); i < (short)(certOffset + 5); i++) {
+			if(cert[i] == 0x30) {
+				tbsStart = i;
+				break;
+			}
+		}
+		if(tbsStart == 0) {
+			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+		}
+		short tbsLen;
+		if(cert[tbsStart + 1] == (byte)0x81) {
+			tbsLen = (short)(cert[tbsStart + 2] & 0x00FF);
+			tbsLen += 3;
+		} else if(cert[tbsStart + 1] == (byte)0x82) {
+			tbsLen = Util.getShort(cert, (short) (tbsStart + 2));
+			tbsLen += 4;
+		} else {
+			tbsLen = (short)(cert[tbsStart + 1] & 0x00FF);
+			tbsLen += 2;
+		}
+
+		short signSeqStart = (short)(tbsStart + tbsLen + (byte)12/*OID TAG*/);
+		if(cert[signSeqStart] != 0x03 && cert[(short)(signSeqStart + (byte)2)] != 0x00) {
+			ISOException.throwIt(ISO7816.SW_DATA_INVALID);
+		}
+		byte signLen = (byte)(cert[signSeqStart + (byte)1] - (byte)1);//Actual signature Bit string starts after 0x00. signature len expected around 70-72
+
+		ECPublicKey publicKey = (ECPublicKey)ecKeyPair.getPublic();
+		Secp256r1.configureECKeyParameters(publicKey);
+		publicKey.setW(pubKey, pubKeyOffset, pubKeyLen);
+		signerWithSha256.init(publicKey, Signature.MODE_VERIFY);
+		return signerWithSha256.verify(cert, tbsStart, tbsLen, cert, (short) (certOffset + certLen - signLen), signLen);
 	}
 }

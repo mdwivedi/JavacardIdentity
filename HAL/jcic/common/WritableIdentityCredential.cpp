@@ -23,8 +23,8 @@
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
 
-#include <cppbor/cppbor.h>
-#include <cppbor/cppbor_parse.h>
+#include <cppbor.h>
+#include <cppbor_parse.h>
 
 #include <utility>
 
@@ -273,10 +273,10 @@ ndk::ScopedAStatus WritableIdentityCredential::addEntryValue(const vector<uint8_
                                                              vector<uint8_t>* outEncryptedContent) {
     size_t contentSize = content.size();
 
-    if (contentSize > IdentityCredentialStore::kGcmChunkSize) {
-        return ndk::ScopedAStatus(AStatus_fromServiceSpecificErrorWithMessage(
+    if (contentSize > hwProxy_->getHwChunkSize()) {
+		return ndk::ScopedAStatus(AStatus_fromServiceSpecificErrorWithMessage(
                 IIdentityCredentialStore::STATUS_INVALID_DATA,
-                "Passed in chunk of is bigger than kGcmChunkSize"));
+                "Passed in chunk is bigger than HwChunkSize"));
     }
     if (contentSize > entryRemainingBytes_) {
         return ndk::ScopedAStatus(AStatus_fromServiceSpecificErrorWithMessage(
@@ -287,10 +287,10 @@ ndk::ScopedAStatus WritableIdentityCredential::addEntryValue(const vector<uint8_
     entryBytes_.insert(entryBytes_.end(), content.begin(), content.end());
     entryRemainingBytes_ -= contentSize;
     if (entryRemainingBytes_ > 0) {
-        if (contentSize != IdentityCredentialStore::kGcmChunkSize) {
-            return ndk::ScopedAStatus(AStatus_fromServiceSpecificErrorWithMessage(
+        if (contentSize != hwProxy_->getHwChunkSize()) {
+		    return ndk::ScopedAStatus(AStatus_fromServiceSpecificErrorWithMessage(
                     IIdentityCredentialStore::STATUS_INVALID_DATA,
-                    "Retrieved non-final chunk which isn't kGcmChunkSize"));
+                    "Retrieved non-final chunk which isn't HwChunkSize"));
         }
     }
 

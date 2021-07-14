@@ -151,4 +151,7 @@ public interface ICryptoProvider {
 	boolean hmacVerify(byte[] key, short keyOffset, short keyLen,
 					   byte[] data, short dataOffset, short dataLen,
 					   byte[] mac, short macOffset, short macLen);
+
+	boolean verifyCertByPubKey(byte[] cert, short certOffset, short certLen,
+							   byte[] pubKey, short pubKeyOffset, short pubKeyLen);
 }

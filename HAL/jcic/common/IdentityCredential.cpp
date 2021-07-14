@@ -488,7 +488,7 @@ ndk::ScopedAStatus IdentityCredential::startRetrieval(
         }
 
         for (size_t n = 0; n < nsMap->size(); n++) {
-            auto [nsKeyItem, nsValueItem] = (*nsMap)[n];
+            auto& [nsKeyItem, nsValueItem] = (*nsMap)[n];
             const cppbor::Tstr* nsKey = nsKeyItem->asTstr();
             const cppbor::Map* nsInnerMap = nsValueItem->asMap();
             if (nsKey == nullptr || nsInnerMap == nullptr) {
@@ -804,10 +804,10 @@ ndk::ScopedAStatus IdentityCredential::retrieveEntryValue(const vector<uint8_t>&
 
     entryRemainingBytes_ -= chunkSize;
     if (entryRemainingBytes_ > 0) {
-        if (chunkSize != IdentityCredentialStore::kGcmChunkSize) {
+        if (chunkSize != hwProxy_->getHwChunkSize()) {
             return ndk::ScopedAStatus(AStatus_fromServiceSpecificErrorWithMessage(
                     IIdentityCredentialStore::STATUS_INVALID_DATA,
-                    "Retrieved non-final chunk of size which isn't kGcmChunkSize"));
+                    "Retrieved non-final chunk of size which isn't HwChunkSize"));
         }
     }
 

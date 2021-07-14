@@ -19,6 +19,7 @@ package android.security.jcic;
 
 import javacard.framework.ISOException;
 import javacard.framework.Util;
+import javacard.security.MessageDigest;
 
 import static android.security.jcic.ICConstants.*;
 import static android.security.jcic.ICConstants.LONG_SIZE;
@@ -145,15 +146,15 @@ public class ICUtil {
         short sum;
         byte carry = (byte)0;
         while(index > (byte)0) {
-            if(index >= secondLen) {
+            if(index >= (firstLen - secondLen)) {
                 short a1 = (short)(first[(short)(firstOffset + index)] & 0x00FF);
-                short a2 = (short)(second[(short)(secondOffset + index - (short)2)] & 0x00FF);
+                short a2 = (short)(second[(short)(secondOffset + index - (short)(firstLen - secondLen))] & 0x00FF);
                 sum = (short)(carry + a1 + a2);
             } else {
                 short a1 = (short)(first[(short)(firstOffset + index)] & 0x00FF);
                 sum = (short)(carry + a1);
             }
-            first[index] = (byte)sum;
+            first[(short)(firstOffset + index)] = (byte)sum;
             carry = (byte) (sum > 255 ? 1 : 0);
             index--;
         }
@@ -262,7 +263,56 @@ public class ICUtil {
         return cborEncoder.getCurrentOffset();
     }
 
-    public static short readUint(CBORDecoder cborDecoder, byte[] outBuff, short outBuffOffset) {
+    public static short constAndCalcCBOREntryAdditionalData(CBORDecoder cborDecoder, CBOREncoder cborEncoder,
+                                                            MessageDigest messageDigest,
+                                                   byte[] inBuff, short inOffset, short inLen,
+                                                   byte[] outBuff, short outOffset, short outLen,
+                                                   byte[] shaOut, short shaOutOff,
+                                                   byte[] tempBuffer, short tempBuffOffset) {
+
+        cborDecoder.init(inBuff, inOffset, inLen);
+        cborEncoder.init(outBuff, outOffset, outLen);
+        cborDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+        cborEncoder.startMap((short) 3);
+        //encode key as Namespace string
+        cborEncoder.encodeTextString(STR_NAME_SPACE, (short)0, (short)STR_NAME_SPACE.length);
+        //Hold nameSpace in temp variable
+        short nameSpaceLen = cborDecoder.readByteString(tempBuffer, tempBuffOffset);
+        //encode nameSpace string
+        cborEncoder.encodeTextString(tempBuffer, tempBuffOffset, nameSpaceLen);
+        //encode key as Name string, lets use it from Namespace string
+        cborEncoder.encodeTextString(STR_NAME_SPACE, (short)0, (short)4);
+        //read name parameter
+        short nameLen = cborDecoder.readByteString(tempBuffer, tempBuffOffset);
+        cborEncoder.encodeTextString(tempBuffer, tempBuffOffset, nameLen);
+
+        //encode key as AccessControlProfileIds string
+        cborEncoder.encodeTextString(STR_ACCESS_CONTROL_PROFILE_IDS, (short)0, (short)STR_ACCESS_CONTROL_PROFILE_IDS.length);
+        short acpIdLen = cborDecoder.readMajorType(CBORBase.TYPE_ARRAY);
+        cborEncoder.startArray(acpIdLen);
+        for(short i = (short)0; i < acpIdLen; i++) {
+            byte intSize = cborDecoder.getIntegerSize();
+            if(intSize == BYTE_SIZE) {
+                cborEncoder.encodeUInt8(cborDecoder.readInt8());
+            } else if(intSize == SHORT_SIZE) {
+                cborEncoder.encodeUInt16(cborDecoder.readInt16());
+            } else {
+                ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+            }
+        }
+        messageDigest.doFinal(outBuff, outOffset, cborEncoder.getCurrentOffset(), shaOut, shaOutOff);
+
+        return cborEncoder.getCurrentOffset();
+    }
+
+    /**
+     * Reads unsigned integer value of any size from CBORDecoder and copy in out buffer.
+     * @param cborDecoder CBOR decoder to read UInt from
+     * @param outBuff Out put UInt value.
+     * @param outBuffOffset Out buffer offset
+     * @return length of UInt
+     */
+    public static short readUInt(CBORDecoder cborDecoder, byte[] outBuff, short outBuffOffset) {
         if(cborDecoder.getMajorType() != CBORBase.TYPE_UNSIGNED_INTEGER) {
             ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
@@ -282,26 +332,51 @@ public class ICUtil {
         return intSize;
     }
 
+    /**
+     * Calculates size of required bytes to encode given size of data
+     * @param size of data.
+     * @return size of required bytes to encode given size of data.
+     */
     public static byte calCborAdditionalLengthBytesFor(short size) {
         if (size < 24) {
-            return 0;
+            return (byte)0;
         } else if (size <= 0xff) {
-            return 1;
+            return BYTE_SIZE;
         }
-        return 2;
+        return SHORT_SIZE;
     }
 
+    /**
+     * Calculates size of required bytes to encode given size of data
+     * @param valueBuff size of data in byte array
+     * @param valueOffset size byte array offset
+     * @param valueSize size byte array length
+     * @return size of required bytes to encode given size of data.
+     */
     public static byte calCborAdditionalLengthBytesFor(byte[] valueBuff, short valueOffset, short valueSize) {
         if(valueSize <= 0 || valueSize > 8) {
             ISOException.throwIt(ISO7816.SW_DATA_INVALID);
         }
-        if(valueSize == BYTE_SIZE) {
-            if (valueBuff[valueOffset] < 24) {
-                return 0;
-            } else if (valueBuff[valueOffset] <= 0xff) {
-                return 1;
+        byte i = 0;
+        for (; valueBuff[(short)(valueOffset + i)] == 0x0 && i < valueSize; i++);
+        if(i > 0) {
+            valueSize = (short) (valueSize - i);
+        }
+        return  valueSize > INT_SIZE ? LONG_SIZE : valueSize > SHORT_SIZE ? INT_SIZE : valueSize > BYTE_SIZE ? SHORT_SIZE : (short)(valueBuff[(short)(valueOffset + i)] & 0x00FF) > (short)24 ? BYTE_SIZE : (byte)0;
+    }
+
+    public static byte arrayCompare(byte src[], short srcOff, byte dest[], short destOff, short length) {
+        if (length < 0) {
+            ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+        }
+        for (short i = 0; i < length; i++) {
+            if (src[(short)(srcOff + i)] != dest[(short)(destOff + i)]) {
+                short thisSrc = (short) (src[(short)(srcOff + i)] & 0x00ff);
+                short thisDest = (short) (dest[(short)(destOff + i)] & 0x00ff);
+                return (byte) (thisSrc >= thisDest ? 1 : -1);
             }
         }
-        return (byte) valueSize;
+
+        return 0;
     }
 }

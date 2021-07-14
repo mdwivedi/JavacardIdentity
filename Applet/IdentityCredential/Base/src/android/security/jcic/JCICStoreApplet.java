@@ -22,7 +22,8 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
     private static final byte[] STR_CREDENTIAL_SOTRE_AUTHIR_NAME = {(byte) 0x47, (byte) 0x6f, (byte) 0x6f, (byte) 0x67, (byte) 0x6c, (byte) 0x65};
     
     public static final short DATA_CHUNK_SIZE = (short)1024;
-    
+    public static final short MAX_APDU_SIZE = (short)230;
+
     public static final boolean IS_DIRECT_ACCESS_ENABLED = false;
     
     private final CBORDecoder mCBORDecoder;
@@ -42,11 +43,11 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 
         mAPDUManager = new APDUManager((byte) (CryptoManager.AES_GCM_IV_SIZE + CryptoManager.AES_GCM_TAG_SIZE));
 
-        CryptoManager cryptoManager = new CryptoManager(mAPDUManager, cryptoProvider/*, mAccessControlManager,*/);
+        CryptoManager cryptoManager = new CryptoManager(cryptoProvider);
     	
-		mProvisioning = new JCICProvisioning(cryptoManager, mAPDUManager, mCBORDecoder, mCBOREncoder);
+		mProvisioning = new JCICProvisioning(cryptoManager, mCBORDecoder, mCBOREncoder);
 		
-		mPresentation = new JCICPresentation(cryptoManager, mAPDUManager, mCBORDecoder, mCBOREncoder);
+		mPresentation = new JCICPresentation(cryptoManager, mCBORDecoder, mCBOREncoder);
 		
     }
 
@@ -61,7 +62,6 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
         if (this.selectingApplet()) {
         	mProvisioning.reset();
         	mPresentation.reset();
-            //mAccessControlManager.reset();
             processSelectApplet(apdu);
             return;
         }
@@ -95,7 +95,8 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
 	            case ISO7816.INS_ICS_ADD_ENTRY_VALUE:
 	            case ISO7816.INS_ICS_FINISH_ADDING_ENTRIES:
 	            case ISO7816.INS_ICS_FINISH_GET_CREDENTIAL_DATA:
-	            	mProvisioning.processAPDU();
+                case ISO7816.INS_ICS_UPDATE_CREDENTIAL:
+	            	mProvisioning.processAPDU(mAPDUManager);
 	            	break;
                 case ISO7816.INS_ICS_PRESENTATION_INIT:
                 case ISO7816.INS_ICS_CREATE_EPHEMERAL_KEY_PAIR:
@@ -112,12 +113,8 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
                 case ISO7816.INS_ICS_GENERATE_SIGNING_KEY_PAIR:
                 case ISO7816.INS_ICS_PROVE_OWNERSHIP:
                 case ISO7816.INS_ICS_DELETE_CREDENTIAL:
-                case ISO7816.INS_ICS_UPDATE_CREDENTIAL:
-                    mPresentation.processAPDU();
+                    mPresentation.processAPDU(mAPDUManager);
                     break;
-	            case ISO7816.INS_ICS_TEST_CBOR:
-	                //processTestCBOR();
-	                break;
 	            default:
 	                ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
             }
@@ -133,8 +130,8 @@ public class JCICStoreApplet extends Applet implements ExtendedLength {
     private void processSelectApplet(APDU apdu){
         mAPDUManager.setOutgoing();
         byte[] outBuff = mAPDUManager.getSendBuffer();
-        Util.setShort(outBuff, (short) 0, (short) apdu.getBuffer().length);
-        Util.setShort(outBuff, (short) 2, APDUManager.MAXCHUNKSIZE);
+        Util.setShort(outBuff, (short) 0, MAX_APDU_SIZE);
+        Util.setShort(outBuff, (short) 2, DATA_CHUNK_SIZE);
         Util.setShort(outBuff, (short) 4, CryptoManager.getAESKeySize());
 
         mAPDUManager.setOutgoingLength((short) 6);
